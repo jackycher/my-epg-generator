@@ -385,7 +385,7 @@ def playlist_main():
         print(f"\n✅ PLAYLIST生成完成！")
         print(f"📄 输出文件：{config['m3u_output']}")
         print(f"📝 日志文件：{config['log_path']}")
-        print(f⏱️  耗时：{round(run_duration, 2)}秒")
+        print(f"⏱️  耗时：{round(run_duration, 2)}秒")
         print(f"📊 新增频道：{added_count}个，总频道：{len(supplemented_channels)}个")
         
     except Exception as e:

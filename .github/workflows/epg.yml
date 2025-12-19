@@ -31,21 +31,21 @@ jobs:
           python epg_generator.py
       
       # 步骤4：上传生成的文件到GitHub Releases（可选）
-      - name: Upload EPG files to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: epg-latest
-          name: EPG Latest Build (${{ github.run_id }})
-          body: |
-            自动生成的EPG文件
-            - 生成时间：${{ github.run_at }}
-            - 运行ID：${{ github.run_id }}
-          files: |
-            epg.xml
-            epg.xml.gz
-            
-          overwrite: true  # 覆盖同名tag的release
-        if: success()  # 仅在脚本运行成功时执行
+      # - name: Upload EPG files to Release
+      #   uses: softprops/action-gh-release@v2
+      #   with:
+      #     tag_name: epg-latest
+      #   name: EPG Latest Build (${{ github.run_id }})
+      #     body: |
+      #      自动生成的EPG文件
+      #     - 生成时间：${{ github.run_at }}
+      #      - 运行ID：${{ github.run_id }}
+      #   files: |
+      #      epg.xml
+      #     epg.xml.gz
+      #      
+      #   overwrite: true  # 覆盖同名tag的release
+      #  if: success()  # 仅在脚本运行成功时执行
       
       # 步骤5：推送生成的文件到仓库（可选，替代Release）
       - name: Push files to repository

@@ -257,7 +257,13 @@ def clean_channel_name(raw_name):
     return clean_name
 
 def fuzzy_match(local_clean_name, ext_names, clean_ext_name=True):
-    """统一的模糊匹配规则"""
+    """
+    统一的模糊匹配规则（修复CCTV4欧洲/美洲匹配错误）
+    :param local_clean_name: 本地清理后的频道名
+    :param ext_names: 外部EPG频道名列表
+    :param clean_ext_name: 是否对外部名称执行清理规则
+    :return: 匹配到的外部频道名
+    """
     if not local_clean_name:
         return None
     
@@ -272,16 +278,33 @@ def fuzzy_match(local_clean_name, ext_names, clean_ext_name=True):
     
     ext_clean_list = list(ext_name_map.keys())
     
-    # 第一步：精准匹配
+    # 第一步：精准匹配（原逻辑保留）
     if local_clean_name in ext_clean_list:
         return ext_name_map[local_clean_name]
     
-    # 第二步：包含匹配
+    # 第二步：优化的包含匹配（修复核心问题）
+    match_candidates = []
     for ext_clean in ext_clean_list:
-        if local_clean_name in ext_clean or ext_clean in local_clean_name:
-            return ext_name_map[ext_clean]
+        # 规则1：优先「本地名完整包含在外部名中」（如CCTV4欧洲 → CCTV4欧洲高清）
+        if local_clean_name in ext_clean:
+            # 排除包含4K的干扰项（针对CCTV4系列）
+            if "4K" in ext_clean and "4" in local_clean_name and "欧洲" in local_clean_name:
+                continue
+            if "4K" in ext_clean and "4" in local_clean_name and "美洲" in local_clean_name:
+                continue
+            match_candidates.append((ext_clean, len(ext_clean)))  # 记录名称+长度，优先短名称
+        
+        # 规则2：反向包含仅当外部名长度≤本地名+2（避免CCTV4匹配到CCTV4K超高清HDR）
+        elif ext_clean in local_clean_name and len(ext_clean) >= len(local_clean_name) - 2:
+            match_candidates.append((ext_clean, len(ext_clean)))
     
-    # 第三步：移除+号匹配
+    # 从候选中选最短的（最接近本地名的）
+    if match_candidates:
+        # 按名称长度升序排序，优先匹配最接近的
+        match_candidates.sort(key=lambda x: x[1])
+        return ext_name_map[match_candidates[0][0]]
+    
+    # 第三步：移除+号匹配（原逻辑保留）
     local_no_plus = local_clean_name.replace("+", "")
     for ext_clean in ext_clean_list:
         ext_no_plus = ext_clean.replace("+", "")

@@ -28,7 +28,7 @@ ENABLE_OFFICIAL_EPG = False  # 是否开启官方EPG下载（True/False）
 
 # EPG服务器和文件路径（适配GitHub工作目录）
 EPG_SERVER_URL = "http://210.13.21.3"
-BJcul_PATH = "https://jackycher.dynv6.net:6678/epg/mcast/rtsp5.php?jk=txt&token=6484a4a7e1&rtsp=false&rtpa="
+BJcul_PATH = "./bjcul.txt"
 EPG_SAVE_PATH = "./epg.xml"                 # 生成的EPG文件（简化路径）
 EPG_GZ_PATH = "./epg.xml.gz"                # 压缩的gz文件
 LOG_PATH = "./epg_run.log"                  # 日志文件（简化路径）

@@ -1,0 +1,59 @@
+name: PLAYLIST Generator
+
+# 定时触发（每天凌晨3点运行，时区为UTC，对应北京时间11点；如需北京时间3点，设置为 19:00）
+on:
+    #schedule:
+    #  - cron: '0 19 * * *'  # UTC时间19点 = 北京时间凌晨3点
+  # 手动触发
+  workflow_dispatch:
+
+# 权限配置
+permissions:
+  contents: write  # 允许写入仓库内容（用于上传生成的文件）
+
+jobs:
+  generate-playlist:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 步骤1：检出代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # 步骤2：设置Python环境
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      # 步骤3：运行PLAYLIST生成脚本
+      - name: Run PLAYLIST generator
+        run: |
+          python playlist_generator.py
+      
+      # 步骤4：上传生成的文件到GitHub Releases（可选）
+      - name: Upload PLAYLIST files to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: playlist-latest
+          name: PLAYLIST Latest Build (${{ github.run_id }})
+          body: |
+            自动生成的PLAYLIST文件
+            - 生成时间：${{ github.run_at }}
+            - 运行ID：${{ github.run_id }}
+          files: |
+            playlist.m3u
+                        
+          overwrite: true  # 覆盖同名tag的release
+        if: success()  # 仅在脚本运行成功时执行
+      
+      # 步骤5：推送生成的文件到仓库（可选，替代Release）
+      - name: Push files to repository
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add playlist.m3u
+          git commit -m "Update playlist files - $(date +'%Y-%m-%d %H:%M:%S')"
+          git push
+        if: success()
+        continue-on-error: true  # 推送失败不影响整体流程

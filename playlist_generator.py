@@ -15,8 +15,8 @@ import traceback
 # ===================== playlist配置区 =====================
 PLAYLIST_CONFIG = {
     'txt_source': './bjcul.txt',
-    'remote_m3u_url': 'https://gh-proxy.org/raw.githubusercontent.com/qwerttvv/Beijing-IPTV/master/IPTV-Unicom-Multicast.m3u',
-    'remote_json_url': 'https://gh-proxy.org/raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/playlist-zz.json',
+    'remote_m3u_url': 'https://raw.githubusercontent.com/qwerttvv/Beijing-IPTV/master/IPTV-Unicom-Multicast.m3u',
+    'remote_json_url': 'https://raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/playlist-zz.json',
     'm3u_output': './playlist.m3u',
     'epg_url': 'https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml',
     'rtsp_enabled': True,

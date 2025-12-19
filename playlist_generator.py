@@ -225,10 +225,32 @@ def match_json_metadata(channels, remote_json_url):
     return matched_channels
 
 def parse_prelogo_placeholder(prelogo, channel_data):
-    """解析logo占位符"""
+    """
+    解析logo占位符，新增逻辑：
+    - 若prelogo不含{}占位符，将prelogo与channel_data的logo拼接
+    - 若prelogo含{}占位符，执行原有占位符替换逻辑
+    """
     if not prelogo:
-        return ''
+        return channel_data.get('logo', '')  # prelogo为空时直接返回json中的logo
     
+    # 检测是否包含占位符（{xxx}格式）
+    placeholder_pattern = r'\{(\w+)\}'
+    has_placeholder = re.search(placeholder_pattern, prelogo) is not None
+    
+    # 无占位符时，拼接prelogo和json中的logo
+    if not has_placeholder:
+        json_logo = channel_data.get('logo', '')
+        # 处理拼接时的路径分隔符（避免重复/）
+        if json_logo:
+            # 确保prelogo末尾有/，且json_logo开头无/
+            prelogo_end = prelogo.rstrip('/') + '/'
+            json_logo_start = json_logo.lstrip('/')
+            final_logo = prelogo_end + json_logo_start
+        else:
+            final_logo = prelogo  # json中无logo时直接返回prelogo
+        return final_logo
+    
+    # 有占位符时，执行原有替换逻辑
     placeholder_mapping = {
         '{tvgname}': channel_data.get('tvg_name', ''),
         '{name}': channel_data.get('name', ''),
@@ -241,7 +263,7 @@ def parse_prelogo_placeholder(prelogo, channel_data):
     for placeholder, value in placeholder_mapping.items():
         result = result.replace(placeholder, str(value))
     
-    placeholder_pattern = r'\{(\w+)\}'
+    # 处理未匹配的占位符
     matches = re.findall(placeholder_pattern, result)
     for match in matches:
         result = result.replace(f'{{{match}}}', str(channel_data.get(match, '')))
@@ -277,7 +299,7 @@ def generate_m3u_content(channels):
             remote_channel_names.append(name)
             remote_channel_count += 1
         
-        # 解析logo
+        # 解析logo（使用修改后的逻辑）
         channel_data = {
             'tvg_name': tvg_name,
             'name': name,
@@ -287,7 +309,7 @@ def generate_m3u_content(channels):
         }
         tvg_logo = parse_prelogo_placeholder(config['prelogo'], channel_data)
         
-        # 新增频道logo兜底
+        # 新增频道logo兜底（保持原有逻辑）
         if is_remote and not tvg_logo:
             tvg_logo = f"{config['prelogo']}{tvg_name}.png"
         
@@ -363,7 +385,7 @@ def playlist_main():
         print(f"\n✅ PLAYLIST生成完成！")
         print(f"📄 输出文件：{config['m3u_output']}")
         print(f"📝 日志文件：{config['log_path']}")
-        print(f"⏱️  耗时：{round(run_duration, 2)}秒")
+        print(f⏱️  耗时：{round(run_duration, 2)}秒")
         print(f"📊 新增频道：{added_count}个，总频道：{len(supplemented_channels)}个")
         
     except Exception as e:

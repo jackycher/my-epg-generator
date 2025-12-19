@@ -307,12 +307,12 @@ rtp://239.3.1.70:4120
 #EXTINF:-1 channel-number="320" tvg-id="320" tvg-name="快乐垂钓" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/refs/heads/main/img/QiTa/HuNan_KuaiLeChuiDiao.png" group-title="体验频道",快乐垂钓
 rtp://239.3.1.164:8001
 #【警告】未找到rtp://239.3.1.164:8001的时移地址
-#EXTINF:-1 tvg-name="深圳卫视" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/refs/heads/main/img/" group-title="新增频道",深圳卫视
+#EXTINF:-1 tvg-name="深圳卫视" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/refs/heads/main/img/" group-title="新增频道",深圳卫视[超清HDR]
 rtp://239.3.1.202:2000
 #【警告】未找到rtp://239.3.1.202:2000的时移地址
-#EXTINF:-1 tvg-name="广东卫视" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/refs/heads/main/img/" group-title="新增频道",广东卫视
+#EXTINF:-1 tvg-name="广东卫视" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/refs/heads/main/img/" group-title="新增频道",广东卫视[超清HDR]
 rtp://239.3.1.203:2000
 #【警告】未找到rtp://239.3.1.203:2000的时移地址
-#EXTINF:-1 tvg-name="该频道节目单尚无" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/refs/heads/main/img/" group-title="新增频道",该频道节目单尚无
+#EXTINF:-1 tvg-name="该频道节目单尚无" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/refs/heads/main/img/" group-title="新增频道",财富天下
 rtp://239.3.1.53:9136
 #【警告】未找到rtp://239.3.1.53:9136的时移地址

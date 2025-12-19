@@ -52,7 +52,7 @@ RETRY_TIMES = CACHE_RETRY_TIMES
 # 多外部EPG源配置（按优先级排序）
 EXTERNAL_EPG_SOURCES = [                              
     {
-        "url": "https://gh-proxy.org/raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/epg.xml.gz",
+        "url": "https://raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/epg.xml.gz",
         "name": "主EPG源-zzzz0317",
         "is_official": False,
         "clean_name": True
@@ -84,7 +84,7 @@ EXTERNAL_EPG_SOURCES = [
 ]
 
 # JSON格式配置
-PLAYLIST_FILE_PATH = "https://gh-proxy.org/raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/playlist-zz.json"
+PLAYLIST_FILE_PATH = "https://raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/playlist-zz.json"
 PLAYLIST_FORMAT = "zz"
 
 # ===================== JSON格式字段映射配置 =====================

@@ -101,21 +101,21 @@ def fetch_remote_m3u(remote_m3u_url):
         if line.startswith('#EXTINF:'):
             tvg_name_match = re.search(r'tvg-name="([^"]+)"', line)
             name_match = re.search(r',([^,]+)$', line)
-            
-            tvg_name = name_match.group(1).strip() if name_match else ""
-            if tvg_name_match:
-                tvg_name = tvg_name_match.group(1).strip()
-            
+
+            # 分离：逗号后的显示名 和 tvg-name属性值
+            display_name = name_match.group(1).strip() if name_match else ""  # 逗号后显示名（最终M3U里的名称）
+            tvg_name_attr = tvg_name_match.group(1).strip() if tvg_name_match else display_name  # tvg-name属性值
+
             if i + 1 < len(lines):
                 url = lines[i+1].strip()
                 if url and not url.startswith('#'):
                     remote_channels[url] = {
-                        'name': tvg_name,
+                        'name': display_name,  # 关键：逗号后显示名用这个
                         'url': url,
                         'group': '新增频道',
-                        'tvg_name': tvg_name
+                        'tvg_name': tvg_name_attr  # tvg-name属性用这个（不影响显示名）
                     }
-                    remote_channel_names.append(tvg_name)
+                    remote_channel_names.append(display_name)
                     parsed_channel_count += 1
     
     write_log(f"远程M3U解析完成 - 提取{parsed_channel_count}个频道", "STEP2_DETAIL")
@@ -311,7 +311,7 @@ def generate_m3u_content(channels):
         
         # 新增频道logo兜底（保持原有逻辑）
         if is_remote and not tvg_logo:
-            tvg_logo = f"{config['prelogo']}{tvg_name}.png"
+            tvg_logo = f"{config['prelogo']}{name}.png"
         
         # 构建EXTINF行
         extinf_parts = ['#EXTINF:-1']

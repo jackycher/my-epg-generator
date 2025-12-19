@@ -256,9 +256,11 @@ def clean_channel_name(raw_name):
     clean_name = re.sub(r"\s+", "", clean_name)
     return clean_name
 
+
+
 def fuzzy_match(local_clean_name, ext_names, clean_ext_name=True):
     """
-    统一的模糊匹配规则（彻底修复CCTV数字频道误匹配4K问题）
+    统一的模糊匹配规则（彻底修复CCTV5/CCTV5+互配、4K误配问题）
     :param local_clean_name: 本地清理后的频道名
     :param ext_names: 外部EPG频道名列表
     :param clean_ext_name: 是否对外部名称执行清理规则
@@ -267,70 +269,72 @@ def fuzzy_match(local_clean_name, ext_names, clean_ext_name=True):
     if not local_clean_name:
         return None
     
-    # ========== 新增：提取本地CCTV频道的数字（核心修复逻辑） ==========
-    # 匹配CCTV+数字的格式（如CCTV1、CCTV4、CCTV15）
-    cctv_num_pattern = re.compile(r'CCTV(\d+)')
-    local_cctv_num = None
+    # ========== 核心修复：提取CCTV频道的「数字+特殊标识」（如5、5+、16+） ==========
+    # 正则匹配：CCTV+数字+可选的+号（覆盖CCTV5、CCTV5+、CCTV16+等）
+    cctv_pattern = re.compile(r'CCTV(\d+\+?)')
+    local_cctv_tag = None  # 存储本地CCTV标识（如5、5+、15）
     local_is_4k = local_clean_name in KEEP_4K_NAMES  # 判断本地是否是4K频道
     
-    # 提取本地CCTV频道的数字（如CCTV1→1，CCTV4欧洲→4，CCTV15→15）
-    local_cctv_match = cctv_num_pattern.search(local_clean_name)
+    # 提取本地CCTV的核心标识
+    local_cctv_match = cctv_pattern.search(local_clean_name)
     if local_cctv_match:
-        local_cctv_num = local_cctv_match.group(1)  # 提取数字部分（字符串类型）
+        local_cctv_tag = local_cctv_match.group(1)  # 如CCTV5→5，CCTV5+→5+，CCTV4欧洲→4
     
-    # ========== 预处理外部名称 ==========
-    ext_name_map = {}
-    ext_clean_list = []
+    # ========== 预处理外部名称（过滤4K+提取标识） ==========
+    ext_candidate = []  # 存储(外部清理名, 外部CCTV标识, 原始外部名)
     for ext_name in ext_names:
         if clean_ext_name:
             ext_clean = clean_channel_name(ext_name)
         else:
             ext_clean = ext_name.strip().replace(" ", "")
         
-        # 全局拦截：非4K本地频道，直接跳过含4K的外部频道
+        # 规则1：非4K本地频道，直接跳过含4K的外部频道
         if not local_is_4k and "4K" in ext_clean:
             continue
         
-        ext_name_map[ext_clean] = ext_name
-        ext_clean_list.append(ext_clean)
-    
-    # ========== 第一步：精准名称匹配（原逻辑保留） ==========
-    if local_clean_name in ext_clean_list:
-        return ext_name_map[local_clean_name]
-    
-    # ========== 第二步：CCTV数字精准匹配（新增核心逻辑） ==========
-    if local_cctv_num:
-        # 筛选出外部名中包含「CCTV+相同数字」的频道（如CCTV1只匹配含CCTV1的外部名）
-        cctv_matched_ext = []
-        for ext_clean in ext_clean_list:
-            ext_cctv_match = cctv_num_pattern.search(ext_clean)
-            if ext_cctv_match and ext_cctv_match.group(1) == local_cctv_num:
-                cctv_matched_ext.append((ext_clean, len(ext_clean)))
+        # 提取外部CCTV的核心标识
+        ext_cctv_tag = None
+        ext_cctv_match = cctv_pattern.search(ext_clean)
+        if ext_cctv_match:
+            ext_cctv_tag = ext_cctv_match.group(1)
         
-        # 优先选最短的（最接近本地名的，如CCTV1→CCTV1高清）
-        if cctv_matched_ext:
-            cctv_matched_ext.sort(key=lambda x: x[1])
-            return ext_name_map[cctv_matched_ext[0][0]]
+        ext_candidate.append((ext_clean, ext_cctv_tag, ext_name))
     
-    # ========== 第三步：优化的包含匹配（仅保留正向包含，且长度接近） ==========
+    # ========== 第一步：精准名称匹配 ==========
+    for ext_clean, _, ext_name in ext_candidate:
+        if local_clean_name == ext_clean:
+            return ext_name
+    
+    # ========== 第二步：CCTV核心标识精准匹配（区分5和5+） ==========
+    if local_cctv_tag:
+        # 筛选：外部标识与本地完全一致（如5→5，5+→5+）
+        matched_cctv = []
+        for ext_clean, ext_cctv_tag, ext_name in ext_candidate:
+            if ext_cctv_tag == local_cctv_tag:
+                # 记录（外部名，长度）：优先匹配最短的（如CCTV5→CCTV5高清，而非CCTV5体育高清）
+                matched_cctv.append((ext_clean, len(ext_clean), ext_name))
+        
+        if matched_cctv:
+            # 按名称长度升序，选最接近本地名的
+            matched_cctv.sort(key=lambda x: x[1])
+            return matched_cctv[0][2]
+    
+    # ========== 第三步：正向包含匹配（仅本地名在外部名中，且长度接近） ==========
     match_candidates = []
-    for ext_clean in ext_clean_list:
-        # 仅保留「本地名完整包含在外部名中」（如CCTV4欧洲 → CCTV4欧洲高清）
-        if local_clean_name in ext_clean:
-            # 限制外部名长度不超过本地名+5（避免过长的无关名）
-            if len(ext_clean) <= len(local_clean_name) + 5:
-                match_candidates.append((ext_clean, len(ext_clean)))
+    for ext_clean, _, ext_name in ext_candidate:
+        if local_clean_name in ext_clean and len(ext_clean) <= len(local_clean_name) + 6:
+            match_candidates.append((ext_clean, len(ext_clean), ext_name))
     
     if match_candidates:
         match_candidates.sort(key=lambda x: x[1])
-        return ext_name_map[match_candidates[0][0]]
+        return match_candidates[0][2]
     
-    # ========== 第四步：移除+号匹配（原逻辑保留） ==========
+    # ========== 第四步：移除+号兜底匹配（仅作为最后备选） ==========
     local_no_plus = local_clean_name.replace("+", "")
-    for ext_clean in ext_clean_list:
+    for ext_clean, _, ext_name in ext_candidate:
         ext_no_plus = ext_clean.replace("+", "")
         if local_no_plus == ext_no_plus:
-            return ext_name_map[ext_clean]
+            return ext_name
     
     return None
 

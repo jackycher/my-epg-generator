@@ -20,7 +20,7 @@ PLAYLIST_CONFIG = {
     'm3u_output': './playlist.m3u',
     'epg_url': 'https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml',
     'rtsp_enabled': True,
-    'prelogo': 'https://gh-proxy.org/raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/refs/heads/main/img/',
+    'prelogo': 'https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/{name}.png',
     'log_path': "./playlist_run.log"  # playlist专属日志
 }
 

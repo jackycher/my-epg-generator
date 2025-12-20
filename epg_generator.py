@@ -689,7 +689,7 @@ def epg_main():
         root = ET.Element("tv", {
             "generator-info-name": "MY EPG Generator v4.1",
             "generator-info-url": "custom",
-            "generated-time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "generated-time": "UTC" + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
         
         # 添加频道

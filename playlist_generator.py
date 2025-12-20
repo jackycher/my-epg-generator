@@ -283,7 +283,7 @@ def generate_m3u_content(channels):
     write_log(f"开始生成M3U，共处理{len(channels)}个频道", "STEP5")
     config = PLAYLIST_CONFIG
     # 提前生成时间字符串（只调用一次，避免多次now()产生时差）
-    generated_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    generated_time = "UTC" + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     output = [f'#EXTM3U name="MY_Playlist_generator V4.1" x-tvg-url="{config["epg_url"]}" generated-time="{generated_time}"']
     
     processed_count = 0

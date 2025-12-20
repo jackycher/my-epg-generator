@@ -280,7 +280,7 @@ def generate_m3u_content(channels):
     """生成M3U内容"""
     write_log(f"开始生成M3U，共处理{len(channels)}个频道", "STEP5")
     config = PLAYLIST_CONFIG
-    output = [f'#EXTM3U x-tvg-url="{config["epg_url"]}"']
+    output = [f'#EXTM3U name="MY_Playlist_generator V4.1" x-tvg-url="{config["epg_url"]}" generated-time="{datetime.datetime.now().strftime(\'%Y-%m-%d %H:%M:%S\')}"']
     
     processed_count = 0
     has_timeshift_count = 0

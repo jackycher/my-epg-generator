@@ -687,8 +687,9 @@ def epg_main():
         # 步骤5：生成XML
         write_log("开始生成EPG XML", "STEP5")
         root = ET.Element("tv", {
-            "generator-info-name": "OpenWRT EPG Generator v4.1",
-            "generator-info-url": "custom"
+            "generator-info-name": "MY EPG Generator v4.1",
+            "generator-info-url": "custom",
+            "generated-time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
         
         # 添加频道

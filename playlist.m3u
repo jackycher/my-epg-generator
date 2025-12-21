@@ -1,4 +1,4 @@
-#EXTM3U name="MY_Playlist_generator V4.1" x-tvg-url="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml" generated-time="UTC2025-12-20 19:15:21"
+#EXTM3U name="MY_Playlist_generator V4.1" x-tvg-url="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml" generated-time="UTC2025-12-21 19:15:39"
 #EXTINF:-1 channel-number="1" tvg-id="1" tvg-name="CCTV-1高清" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/CCTV1.png" group-title="CCTV频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221225880/10000100000000060000000000025506_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",CCTV1
 rtp://239.3.1.129:8008
 #EXTINF:-1 channel-number="2" tvg-id="2" tvg-name="CCTV-2高清" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/CCTV2.png" group-title="CCTV频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226036/10000100000000060000000000285832_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",CCTV2
@@ -307,12 +307,3 @@ rtp://239.3.1.70:4120
 #EXTINF:-1 channel-number="320" tvg-id="320" tvg-name="快乐垂钓" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/快乐垂钓.png" group-title="体验频道",快乐垂钓
 rtp://239.3.1.164:8001
 #【警告】未找到rtp://239.3.1.164:8001的时移地址
-#EXTINF:-1 tvg-name="深圳卫视" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/深圳卫视[超清HDR].png" group-title="新增频道",深圳卫视[超清HDR]
-rtp://239.3.1.202:2000
-#【警告】未找到rtp://239.3.1.202:2000的时移地址
-#EXTINF:-1 tvg-name="广东卫视" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/广东卫视[超清HDR].png" group-title="新增频道",广东卫视[超清HDR]
-rtp://239.3.1.203:2000
-#【警告】未找到rtp://239.3.1.203:2000的时移地址
-#EXTINF:-1 tvg-name="该频道节目单尚无" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/财富天下.png" group-title="新增频道",财富天下
-rtp://239.3.1.53:9136
-#【警告】未找到rtp://239.3.1.53:9136的时移地址

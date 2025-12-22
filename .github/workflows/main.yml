@@ -3,7 +3,7 @@ name: PLAYLIST_EPG Generator
 # 定时触发（每天凌晨3点运行，时区为UTC，对应北京时间11点；如需北京时间3点，设置为 19:00）
 on:
   schedule:
-    - cron: '0 19 * * *'  # UTC时间19点 = 北京时间凌晨3点
+    - cron: '0 20 * * *'  # UTC时间19点 = 北京时间凌晨4点
   # 手动触发
   workflow_dispatch:
 

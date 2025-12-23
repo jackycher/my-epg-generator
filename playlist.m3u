@@ -1,4 +1,4 @@
-#EXTM3U name="MY_Playlist_generator V4.1" x-tvg-url="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml" generated-time="UTC2025-12-22 20:29:35"
+#EXTM3U name="MY_Playlist_generator V4.1" x-tvg-url="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml" generated-time="UTC2025-12-23 20:29:20"
 #EXTINF:-1 channel-number="1" tvg-id="1" tvg-name="CCTV-1高清" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/CCTV1.png" group-title="CCTV频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221225880/10000100000000060000000000025506_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",CCTV1
 rtp://239.3.1.129:8008
 #EXTINF:-1 channel-number="2" tvg-id="2" tvg-name="CCTV-2高清" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/CCTV2.png" group-title="CCTV频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226036/10000100000000060000000000285832_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",CCTV2

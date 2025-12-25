@@ -20,6 +20,8 @@ import urllib.parse
 # ===================== EPG配置区 =====================
 EPG_CONFIG = {
     'ENABLE_OFFICIAL_EPG': False,
+    # 新增：外部EPG总开关
+    'ENABLE_EXTERNAL_EPG': True,
     'EPG_SERVER_URL': "http://210.13.21.3",
     'BJcul_PATH': "./bjcul.txt",
     'EPG_SAVE_PATH': "./epg.xml",
@@ -39,31 +41,41 @@ EPG_CONFIG = {
             "url": "https://raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/epg.xml.gz",
             "name": "主EPG源-zzzz0317",
             "is_official": False,
-            "clean_name": True
+            "clean_name": True,
+            # 新增：单个源启用开关
+            "enabled": True
         },
         {
             "url": "https://epg.zsdc.eu.org/t.xml.gz",
             "name": "备用EPG源1-zsdc",
             "is_official": False,
-            "clean_name": True
+            "clean_name": True,
+            # 新增：单个源启用开关
+            "enabled": True
         },
         {
             "url": "https://raw.githubusercontent.com/kuke31/xmlgz/main/all.xml.gz",
             "name": "备用EPG源2-e.erw.cc",
             "is_official": False,
-            "clean_name": True
+            "clean_name": True,
+            # 新增：单个源启用开关
+            "enabled": False  # 示例：关闭这个源
         },
         {
             "url": "https://gitee.com/taksssss/tv/raw/main/epg/112114.xml.gz",
             "name": "备用EPG源3-112114",
             "is_official": False,
-            "clean_name": True
+            "clean_name": True,
+            # 新增：单个源启用开关
+            "enabled": True
         },
         {
             "url": "https://gitee.com/taksssss/tv/raw/main/epg/51zmt.xml.gz",
             "name": "备用EPG源4-51zmt",
             "is_official": False,
-            "clean_name": True
+            "clean_name": True,
+            # 新增：单个源启用开关
+            "enabled": False  # 示例：关闭这个源
         }
     ],
     'PLAYLIST_FILE_PATH': "https://raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/playlist-zz.json",
@@ -423,6 +435,8 @@ def epg_main():
     format_config = config['FORMAT_MAPPING'][config['PLAYLIST_FORMAT']]
     write_log(f"使用格式配置：{config['PLAYLIST_FORMAT']}", "CONFIG")
     write_log(f"官方EPG：{'开启' if config['ENABLE_OFFICIAL_EPG'] else '关闭'}", "CONFIG")
+    # 新增：打印外部EPG总开关状态
+    write_log(f"外部EPG：{'开启' if config['ENABLE_EXTERNAL_EPG'] else '关闭'}", "CONFIG")
     
     try:
         # 步骤1：读取bjcul.txt
@@ -595,44 +609,84 @@ def epg_main():
         total_matched_by_external = 0
         pending_channels = unmatched_bjcul_channels
         
-        for source_idx, epg_source in enumerate(config['EXTERNAL_EPG_SOURCES']):
-            if len(pending_channels) == 0:
-                write_log("无待匹配频道，终止匹配", "STEP4_TERMINATE")
-                break
+        # 新增：判断外部EPG总开关是否关闭
+        if not config['ENABLE_EXTERNAL_EPG']:
+            write_log("外部EPG总开关关闭，跳过所有外部源匹配", "STEP4_SKIP_ALL")
+            print(f"[4/7] 外部EPG总开关关闭，跳过所有外部源匹配")
+        else:
+            # 遍历外部源（新增：过滤掉disabled的源）
+            enabled_sources = [s for s in config['EXTERNAL_EPG_SOURCES'] if s.get("enabled", True)]
+            write_log(f"外部EPG总开关开启，有效源数量：{len(enabled_sources)}（总源数：{len(config['EXTERNAL_EPG_SOURCES'])}）", "STEP4_SOURCE_COUNT")
             
-            source_name = epg_source["name"]
-            source_url = epg_source["url"]
-            is_official = epg_source.get("is_official", False)
-            clean_name = epg_source.get("clean_name", True)
-            
-            write_log(f"处理第{source_idx+1}个源：{source_name} ({source_url})", "STEP4_SOURCE")
-            print(f"[4/7] 匹配外部源{source_idx+1}：{source_name}（待匹配{len(pending_channels)}个）")
-            
-            # 下载EPG源
-            epg_data = download_url(source_url)
-            if not epg_data:
-                write_log(f"源{source_name}下载失败", "STEP4_SOURCE_FAIL")
-                continue
-            
-            # 解析EPG源
-            epg_map, epg_identifiers, id_to_name_map = parse_external_epg(epg_data, is_official)
-            if not epg_map or len(epg_identifiers) == 0:
-                write_log(f"源{source_name}解析失败", "STEP4_SOURCE_PARSE_FAIL")
-                continue
-            
-            # 匹配频道
-            matched_in_this_source = 0
-            new_pending_channels = []
-            for channel in pending_channels:
-                clean_name_local = channel["clean_name"]
-                raw_name = channel["raw_name"]
-                local_num = channel["local_num"]
+            for source_idx, epg_source in enumerate(enabled_sources):
+                if len(pending_channels) == 0:
+                    write_log("无待匹配频道，终止匹配", "STEP4_TERMINATE")
+                    break
                 
-                # 官方源：ID匹配
-                if is_official and local_num and not local_num.startswith(temp_local_num_prefix):
-                    if local_num in epg_identifiers and epg_map.get(local_num):
-                        ext_channel_name = id_to_name_map.get(local_num, f"ID_{local_num}")
-                        ext_progs = epg_map[local_num]
+                source_name = epg_source["name"]
+                source_url = epg_source["url"]
+                is_official = epg_source.get("is_official", False)
+                clean_name = epg_source.get("clean_name", True)
+                
+                write_log(f"处理第{source_idx+1}个源：{source_name} ({source_url})", "STEP4_SOURCE")
+                print(f"[4/7] 匹配外部源{source_idx+1}：{source_name}（待匹配{len(pending_channels)}个）")
+                
+                # 下载EPG源
+                epg_data = download_url(source_url)
+                if not epg_data:
+                    write_log(f"源{source_name}下载失败", "STEP4_SOURCE_FAIL")
+                    continue
+                
+                # 解析EPG源
+                epg_map, epg_identifiers, id_to_name_map = parse_external_epg(epg_data, is_official)
+                if not epg_map or len(epg_identifiers) == 0:
+                    write_log(f"源{source_name}解析失败", "STEP4_SOURCE_PARSE_FAIL")
+                    continue
+                
+                # 匹配频道
+                matched_in_this_source = 0
+                new_pending_channels = []
+                for channel in pending_channels:
+                    clean_name_local = channel["clean_name"]
+                    raw_name = channel["raw_name"]
+                    local_num = channel["local_num"]
+                    
+                    # 官方源：ID匹配
+                    if is_official and local_num and not local_num.startswith(temp_local_num_prefix):
+                        if local_num in epg_identifiers and epg_map.get(local_num):
+                            ext_channel_name = id_to_name_map.get(local_num, f"ID_{local_num}")
+                            ext_progs = epg_map[local_num]
+                            for prog in ext_progs:
+                                programme_list.append({
+                                    "channel": local_num,
+                                    "start": prog["start"],
+                                    "stop": prog["stop"],
+                                    "title": prog["title"]
+                                })
+                            matched_in_this_source += 1
+                            total_matched_by_external += 1
+                            write_log(f"{raw_name}({local_num})匹配到{source_name}（{ext_channel_name}），新增{len(ext_progs)}条", "STEP4_MATCH_SUCCESS")
+                            continue
+                        else:
+                            new_pending_channels.append(channel)
+                            continue
+                    else:
+                        # 非官方源：名称匹配
+                        match_ext_name = fuzzy_match(clean_name_local, epg_identifiers, clean_name)
+                        if not match_ext_name or match_ext_name not in epg_map:
+                            new_pending_channels.append(channel)
+                            continue
+                        
+                        ext_progs = epg_map[match_ext_name]
+                        if not ext_progs:
+                            new_pending_channels.append(channel)
+                            continue
+                        
+                        if not local_num:
+                            local_num = f"{temp_local_num_prefix}{temp_num_counter}"
+                            temp_num_counter += 1
+                            channel["local_num"] = local_num
+                        
                         for prog in ext_progs:
                             programme_list.append({
                                 "channel": local_num,
@@ -640,45 +694,14 @@ def epg_main():
                                 "stop": prog["stop"],
                                 "title": prog["title"]
                             })
+                        
                         matched_in_this_source += 1
                         total_matched_by_external += 1
-                        write_log(f"{raw_name}({local_num})匹配到{source_name}（{ext_channel_name}），新增{len(ext_progs)}条", "STEP4_MATCH_SUCCESS")
-                        continue
-                    else:
-                        new_pending_channels.append(channel)
-                        continue
-                else:
-                    # 非官方源：名称匹配
-                    match_ext_name = fuzzy_match(clean_name_local, epg_identifiers, clean_name)
-                    if not match_ext_name or match_ext_name not in epg_map:
-                        new_pending_channels.append(channel)
-                        continue
-                    
-                    ext_progs = epg_map[match_ext_name]
-                    if not ext_progs:
-                        new_pending_channels.append(channel)
-                        continue
-                    
-                    if not local_num:
-                        local_num = f"{temp_local_num_prefix}{temp_num_counter}"
-                        temp_num_counter += 1
-                        channel["local_num"] = local_num
-                    
-                    for prog in ext_progs:
-                        programme_list.append({
-                            "channel": local_num,
-                            "start": prog["start"],
-                            "stop": prog["stop"],
-                            "title": prog["title"]
-                        })
-                    
-                    matched_in_this_source += 1
-                    total_matched_by_external += 1
-                    write_log(f"{raw_name}({local_num})匹配到{match_ext_name}，新增{len(ext_progs)}条", "STEP4_MATCH_SUCCESS")
-            
-            pending_channels = new_pending_channels
-            write_log(f"{source_name}匹配完成 - 成功{matched_in_this_source}个，剩余{len(pending_channels)}个", "STEP4_SOURCE_SUMMARY")
-            print(f"  → 源{source_idx+1}匹配成功{matched_in_this_source}个，剩余{len(pending_channels)}个")
+                        write_log(f"{raw_name}({local_num})匹配到{match_ext_name}，新增{len(ext_progs)}条", "STEP4_MATCH_SUCCESS")
+                
+                pending_channels = new_pending_channels
+                write_log(f"{source_name}匹配完成 - 成功{matched_in_this_source}个，剩余{len(pending_channels)}个", "STEP4_SOURCE_SUMMARY")
+                print(f"  → 源{source_idx+1}匹配成功{matched_in_this_source}个，剩余{len(pending_channels)}个")
 
         total_unmatched_final = len(pending_channels)
         print(f"[5/7] 多源匹配完成：总计{total_matched_by_external}个，剩余{total_unmatched_final}个未匹配")

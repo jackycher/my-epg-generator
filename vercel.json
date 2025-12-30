@@ -2,21 +2,20 @@
   "builds": [
     {
       "src": "epg_server.py",
-      "use": "@vercel/python@latest",
+      "use": "@vercel/python",
       "config": {
-        "maxLambdaSize": "15mb",
-        "runtime": "python3.11"  # 指定Python版本（Vercel推荐）
+        "runtime": "python3.11"
       }
     }
   ],
   "routes": [
     {
-      "src": "/(.*)",
-      "dest": "epg_server.py"   # 所有请求转发到Flask服务
+      "src": "/diyp_epg.json(.*)",
+      "dest": "/epg_server.py"
     }
   ],
   "env": {
-    "PYTHONIOENCODING": "utf-8",  # 强制UTF-8编码，解决中文乱码
-    "FLASK_ENV": "production"     # 生产环境模式
+    "PYTHONIOENCODING": "utf-8",
+    "FLASK_ENV": "production"
   }
 }

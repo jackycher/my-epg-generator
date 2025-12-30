@@ -2,16 +2,17 @@
   "builds": [
     {
       "src": "epg_server.py",
-      "use": "@vercel/python",
-      "config": {
-        "runtime": "python3.11"
-      }
+      "use": "@vercel/python"
     }
   ],
   "routes": [
     {
       "src": "/diyp_epg.json(.*)",
-      "dest": "/epg_server.py"
+      "dest": "epg_server.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "epg_server.py"
     }
   ],
   "env": {

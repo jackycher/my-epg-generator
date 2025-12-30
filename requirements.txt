@@ -1,4 +1,3 @@
-flask==2.3.3          # 轻量Web框架（适配Vercel）
-gunicorn==21.2.0      # Vercel生产环境WSGI服务器
-lxml==5.2.1           # 增强XML解析，解决编码/格式问题
-python-dotenv==1.0.1  # 环境变量配置（可选）
+flask==2.3.3
+gunicorn==21.2.0
+python-dotenv==1.0.1

@@ -1,172 +1,243 @@
-import { XMLParser } from 'fast-xml-parser';
+/**
+ * Cloudflare Workers EPG 转换脚本
+ * 功能：将 epg.xml 转换为 diyp 格式的 JSON 数据，兼容原 PHP 脚本的参数和输出格式
+ * 使用：部署到 Cloudflare Workers 后，访问 https://your-worker.domain/?ch=央视综合&date=2025-12-31
+ */
 
-// 替换为你的GitHub Raw地址（必须确认可直接访问）
-const EPG_XML_RAW_URL = 'https://raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml';
+// 配置项（根据实际情况修改）
+const CONFIG = {
+  // EPG.xml 源地址（替换为你的仓库地址）
+  EPG_XML_URL: "https://raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml",
+  // 是否开启繁体转简体
+  CHT_TO_CHS: true,
+  // 未找到数据时是否返回默认24小时节目
+  RET_DEFAULT: true,
+  // 默认URL（与PHP脚本保持一致）
+  DEFAULT_URL: "https://github.com/taksssss/iptv-tool",
+  // 台标基础URL（可根据实际配置修改）
+  ICON_BASE_URL: "https://your-worker.domain/data/icon/"
+};
 
-// 核心解析函数（适配你的规范XML格式）
-function parseEpgToDiyp(xmlContent) {
-  const parser = new XMLParser({
-    ignoreAttributes: false,
-    attributeNamePrefix: '@_',
-    textNodeName: '#text',
-    // 强制将单节点转为数组（避免单个节点时不是数组）
-    isArray: (tagName) => tagName === 'channel' || tagName === 'programme' || tagName === 'display-name' || tagName === 'title'
-  });
+// 简繁转换核心映射（基础版，如需更完整可扩展）
+const CHT_TO_CHS_MAP = new Map([
+  ["體", "体"], ["華", "华"], ["臺", "台"], ["灣", "湾"], ["語", "语"],
+  ["鍵", "键"], ["裡", "里"], ["後", "后"], ["麼", "么"], ["倆", "俩"],
+  ["請", "请"], ["進", "进"], ["岀", "出"], ["並", "并"], ["發", "发"],
+  ["電", "电"], ["視", "视"], ["訊", "讯"], ["數", "数"], ["據", "据"],
+  ["網", "网"], ["軟", "软"], ["硬", "硬"], ["機", "机"], ["構", "构"]
+]);
 
-  const xmlData = parser.parse(xmlContent);
-  const tvData = xmlData.tv || {};
-
-  // 1. 提取频道（防护：确保channels是数组）
-  const channels = Array.isArray(tvData.channel) ? tvData.channel : [];
-  const channelMap = {};
-
-  channels.forEach(channel => {
-    const channelId = (channel['@_id'] || '') + ''; // 强制转字符串
-    if (!channelId) return;
-
-    // 提取频道名称（你的XML中display-name是数组，且带lang="zh"）
-    let channelName = '未知频道';
-    const displayNames = Array.isArray(channel['display-name']) ? channel['display-name'] : [];
-    
-    displayNames.forEach(dn => {
-      const lang = (dn['@_lang'] || '') + '';
-      // 强制转字符串 + trim，彻底避免trim报错
-      const nameText = ((dn['#text'] || '') + '').trim();
-      
-      if (lang === 'zh' && nameText) {
-        channelName = nameText;
-      }
-    });
-
-    // 提取LOGO（你的XML中无icon，默认空）
-    const logo = ((channel.icon?.['@_src'] || '') + '').trim();
-    channelMap[channelId] = {
-      name: channelName,
-      tvgid: channelId,
-      logo: logo,
-      program: []
-    };
-  });
-
-  // 2. 提取节目（防护：确保programmes是数组）
-  const programmes = Array.isArray(tvData.programme) ? tvData.programme : [];
-  
-  programmes.forEach(program => {
-    const channelId = (program['@_channel'] || '') + ''; // 强制转字符串（匹配channel的id）
-    if (!channelMap[channelId]) return;
-
-    // 处理时间（强制转字符串后分割）
-    const start = ((program['@_start'] || '') + '').split(' ')[0] || '';
-    const end = ((program['@_stop'] || '') + '').split(' ')[0] || '';
-    if (!start || !end) return;
-
-    // 提取节目名称（你的XML中title是数组，且带lang="zh"）
-    let programTitle = '未知节目';
-    const titles = Array.isArray(program.title) ? program.title : [];
-    
-    titles.forEach(t => {
-      const lang = (t['@_lang'] || '') + '';
-      // 核心修复：强制转字符串后trim
-      const titleText = ((t['#text'] || '') + '').trim();
-      
-      if (lang === 'zh' && titleText) {
-        programTitle = titleText;
-      }
-    });
-
-    // 添加节目到对应频道
-    channelMap[channelId].program.push({
-      start: start,
-      end: end,
-      title: programTitle
-    });
-  });
-
-  // 转为数组返回
-  return Object.values(channelMap);
+/**
+ * 清理频道名（去空格、特殊字符、简繁转换）
+ * @param {string} channelName 原始频道名
+ * @returns {string} 清理后的频道名
+ */
+function cleanChannelName(channelName) {
+  if (!channelName) return "";
+  // 去除空格、特殊字符
+  let cleanName = channelName.trim().replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, "");
+  // 繁体转简体
+  if (CONFIG.CHT_TO_CHS) {
+    cleanName = Array.from(cleanName).map(char => 
+      CHT_TO_CHS_MAP.get(char) || char
+    ).join("");
+  }
+  return cleanName;
 }
 
-// Cloudflare Pages 入口函数（核心修复URL参数解析）
-export async function onRequestGet(context) {
-  try {
-    // 防护：确保context.request存在
-    if (!context || !context.request) {
-      throw new Error('context.request 未定义');
-    }
+/**
+ * 获取格式化日期（兼容PHP的getFormatTime逻辑）
+ * @param {string} dateStr 原始日期字符串（如20251231、2025-12-31）
+ * @returns {string} 格式化后的日期（YYYY-MM-DD）
+ */
+function getFormatDate(dateStr) {
+  if (!dateStr) return new Date().toISOString().split("T")[0];
+  
+  // 去除非数字字符
+  const numDate = dateStr.replace(/\D+/g, "");
+  if (numDate.length < 8) return new Date().toISOString().split("T")[0];
+  
+  // 解析YYYYMMDD格式
+  const year = numDate.slice(0, 4);
+  const month = numDate.slice(4, 6);
+  const day = numDate.slice(6, 8);
+  return `${year}-${month}-${day}`;
+}
 
-    // 1. 读取GitHub Raw的epg.xml
-    const response = await fetch(EPG_XML_RAW_URL, {
-      headers: { 
-        'User-Agent': 'Cloudflare Pages Functions',
-        'Accept': 'text/xml'
-      },
-      cache: 'no-cache' // 禁用缓存，获取最新数据
+/**
+ * 匹配台标URL（模拟PHP的iconUrlMatch）
+ * @param {string} channelName 频道名
+ * @returns {string} 台标URL
+ */
+function getIconUrl(channelName) {
+  // 简化实现，可根据实际台标命名规则扩展
+  const cleanName = cleanChannelName(channelName).replace(/\s+/g, "");
+  return `${CONFIG.ICON_BASE_URL}${encodeURIComponent(cleanName)}.png`;
+}
+
+/**
+ * 解析EPG XML并提取指定频道+日期的节目单
+ * @param {string} xmlStr XML字符串
+ * @param {string} targetChannel 目标频道名（已清理）
+ * @param {string} targetDate 目标日期（YYYY-MM-DD）
+ * @returns {Array} 节目单数组
+ */
+function parseEpgXml(xmlStr, targetChannel, targetDate) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlStr, "application/xml");
+  
+  // 查找匹配的频道（优先精准匹配，其次模糊匹配）
+  let channelNode = null;
+  const allChannels = doc.querySelectorAll("channel");
+  
+  // 1. 精准匹配
+  channelNode = Array.from(allChannels).find(channel => {
+    const displayName = channel.querySelector("display-name")?.textContent || "";
+    return cleanChannelName(displayName) === targetChannel;
+  });
+  
+  // 2. 模糊匹配（频道名包含目标关键词）
+  if (!channelNode) {
+    channelNode = Array.from(allChannels).find(channel => {
+      const displayName = channel.querySelector("display-name")?.textContent || "";
+      return cleanChannelName(displayName).includes(targetChannel);
     });
+  }
+  
+  if (!channelNode) return null;
+  
+  const channelId = channelNode.getAttribute("id");
+  const targetDateTs = new Date(targetDate).getTime();
+  const nextDateTs = targetDateTs + 24 * 60 * 60 * 1000;
+  
+  // 提取该频道指定日期的节目
+  const programmes = Array.from(doc.querySelectorAll(`programme[channel="${channelId}"]`))
+    .map(prog => {
+      const start = new Date(prog.getAttribute("start"));
+      const end = new Date(prog.getAttribute("stop"));
+      
+      // 过滤目标日期的节目
+      if (start.getTime() < targetDateTs || start.getTime() >= nextDateTs) return null;
+      
+      return {
+        start: start.toTimeString().slice(0, 5), // HH:MM
+        end: end.toTimeString().slice(0, 5),
+        title: prog.querySelector("title")?.textContent || "",
+        desc: prog.querySelector("desc")?.textContent || ""
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.start.localeCompare(b.start));
+  
+  return programmes.length > 0 ? programmes : null;
+}
 
-    if (!response.ok) {
-      throw new Error(`获取epg.xml失败：HTTP ${response.status}`);
-    }
+/**
+ * 构建默认EPG数据（24小时精彩节目）
+ * @param {string} channelName 频道名
+ * @param {string} date 日期
+ * @returns {Object} 默认数据
+ */
+function getDefaultEpgData(channelName, date) {
+  const epgData = Array.from({ length: 24 }, (_, hour) => ({
+    start: `${hour.toString().padStart(2, "0")}:00`,
+    end: `${(hour + 1) % 24.toString().padStart(2, "0")}:00`,
+    title: "精彩节目",
+    desc: ""
+  }));
+  
+  return {
+    channel_name: cleanChannelName(channelName),
+    date: date,
+    url: CONFIG.DEFAULT_URL,
+    icon: getIconUrl(channelName),
+    epg_data: CONFIG.RET_DEFAULT ? epgData : ""
+  };
+}
 
-    // 2. 读取XML内容
-    const xmlContent = await response.text();
-    if (!xmlContent) {
-      throw new Error('epg.xml内容为空');
-    }
-
-    // 3. 解析为DIYP格式
-    const diypEpg = parseEpgToDiyp(xmlContent);
-
-    // ========== 核心修复：正确解析URL参数 ==========
-    let chParam = '';
+/**
+ * 主请求处理函数
+ */
+export default {
+  async fetch(request, env, ctx) {
     try {
-      // 先把url转为URL对象，再获取searchParams
-      const url = new URL(context.request.url);
-      // 安全获取ch参数：强制转字符串+trim+小写
-      chParam = ((url.searchParams.get('ch') || '') + '').trim().toLowerCase();
-    } catch (urlError) {
-      console.warn('URL参数解析失败：', urlError.message);
-      chParam = ''; // 解析失败则默认空（返回全量）
-    }
-
-    // 4. 筛选频道（无参数返回全量，有参数模糊匹配）
-    let filteredEpg = diypEpg;
-    if (chParam) {
-      filteredEpg = diypEpg.filter(channel => {
-        const channelName = ((channel.name || '') + '').toLowerCase();
-        const tvgid = ((channel.tvgid || '') + '').toLowerCase();
-        return channelName.includes(chParam) || tvgid.includes(chParam);
+      const url = new URL(request.url);
+      const queryParams = Object.fromEntries(url.searchParams.entries());
+      
+      // 解析参数（兼容ch/channel参数，date参数）
+      const oriChannelName = queryParams.ch || queryParams.channel || "";
+      const cleanChannel = cleanChannelName(oriChannelName);
+      const targetDate = getFormatDate(queryParams.date);
+      
+      // 频道名为空时返回404（对应PHP逻辑）
+      if (!cleanChannel) {
+        return new Response("404 Not Found. <br>未指定频道参数", {
+          status: 404,
+          headers: { "Content-Type": "text/html; charset=utf-8" }
+        });
+      }
+      
+      // 1. 从Cache API获取缓存的EPG XML（缓存24小时）
+      const cache = caches.default;
+      let cachedResponse = await cache.match(CONFIG.EPG_XML_URL);
+      let xmlStr;
+      
+      // 2. 缓存未命中则下载XML
+      if (!cachedResponse) {
+        const xmlResponse = await fetch(CONFIG.EPG_XML_URL);
+        if (!xmlResponse.ok) throw new Error("EPG XML下载失败");
+        
+        xmlStr = await xmlResponse.text();
+        // 缓存XML（24小时）
+        ctx.waitUntil(cache.put(CONFIG.EPG_XML_URL, new Response(xmlStr, {
+          headers: {
+            "Cache-Control": "max-age=86400",
+            "Content-Type": "application/xml; charset=utf-8"
+          }
+        })));
+      } else {
+        xmlStr = await cachedResponse.text();
+      }
+      
+      // 3. 解析XML获取节目单
+      const epgProgrammes = parseEpgXml(xmlStr, cleanChannel, targetDate);
+      
+      // 4. 构建响应数据
+      let responseData;
+      if (epgProgrammes) {
+        responseData = {
+          channel_name: cleanChannelName(oriChannelName),
+          date: targetDate,
+          url: CONFIG.DEFAULT_URL,
+          icon: getIconUrl(oriChannelName),
+          epg_data: epgProgrammes
+        };
+      } else {
+        // 未找到数据返回默认值
+        responseData = getDefaultEpgData(oriChannelName, targetDate);
+      }
+      
+      // 5. 返回JSON响应（兼容PHP的响应头）
+      return new Response(JSON.stringify(responseData, null, 2), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Access-Control-Allow-Origin": "*"
+        }
+      });
+      
+    } catch (error) {
+      // 异常处理
+      return new Response(JSON.stringify({
+        error: "服务器错误",
+        message: error.message
+      }), {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Access-Control-Allow-Origin": "*"
+        }
       });
     }
-
-    // 5. 返回响应（解决跨域+格式化JSON）
-    return new Response(
-      JSON.stringify({ epg: filteredEpg }, null, 2),
-      { 
-        headers: { 
-          'Content-Type': 'application/json; charset=utf-8',
-          'Access-Control-Allow-Origin': '*', // 跨域允许
-          'Cache-Control': 'max-age=300' // 5分钟缓存（平衡性能和实时性）
-        }
-      }
-    );
-
-  } catch (error) {
-    // 详细错误日志，便于调试
-    console.error('整体解析失败详情：', error);
-    return new Response(
-      JSON.stringify({ 
-        error: `解析失败：${error.message}`, 
-        epg: [],
-        debug: [
-          '1. 检查GitHub Raw地址是否可直接访问',
-          '2. 检查XML格式是否规范',
-          '3. 错误类型：' + error.name
-        ]
-      }),
-      { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' }
-      }
-    );
   }
-}
+};

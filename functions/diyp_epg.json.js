@@ -8,8 +8,8 @@ const CONFIG = {
   EPG_XML_URL: "https://raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml",
   CHT_TO_CHS: false,
   RET_DEFAULT: true,
-  DEFAULT_URL: "https://github.com/taksssss/iptv-tool",
-  ICON_BASE_URL: "https://你的域名/data/icon/",
+  DEFAULT_URL: "https://github.com/jackycher/my-epg-generator",
+  ICON_BASE_URL: "https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/",
   DEBUG: true
 };
 

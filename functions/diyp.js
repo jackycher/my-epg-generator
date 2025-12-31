@@ -10,7 +10,7 @@ const CONFIG = {
   RET_DEFAULT: true,
   DEFAULT_URL: "https://github.com/jackycher/my-epg-generator",
   ICON_BASE_URL: "https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/",
-  DEBUG: true
+  DEBUG: false
 };
 
 /**

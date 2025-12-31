@@ -1,5 +1,5 @@
 {
   "dependencies": {
-    "fast-xml-parser": "^4.3.4"  // 纯Node.js XML解析库，无系统依赖
+    "fast-xml-parser": "^4.3.4"
   }
 }

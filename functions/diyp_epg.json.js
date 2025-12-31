@@ -1,74 +1,50 @@
 /**
- * Cloudflare Pages EPG 转 diyp 格式脚本
+ * Cloudflare Pages EPG 转 diyp 格式脚本（无 DOM 依赖）
  * 路径：/functions/diyp_epg.js
- * 访问：https://你的域名/diyp_epg?ch=CCTV13&date=20251224
+ * 访问：https://你的域名/diyp_epg?ch=CCTV1&date=20251224&debug=1
  */
 
 const CONFIG = {
-  // EPG源地址（替换为你的真实地址）
   EPG_XML_URL: "https://raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml",
-  CHT_TO_CHS: false, // 你的XML已是简体，无需转换
+  CHT_TO_CHS: false,
   RET_DEFAULT: true,
   DEFAULT_URL: "https://github.com/taksssss/iptv-tool",
   ICON_BASE_URL: "https://你的域名/data/icon/",
-  DEBUG: true // 调试模式：加 ?debug=1 可查看详细匹配日志
+  DEBUG: true
 };
 
 /**
- * 1. 修复频道名清理（统一大小写+保留核心标识）
+ * 1. 清理频道名（统一大写+去特殊字符）
  */
 function cleanChannelName(channelName) {
   if (!channelName) return "";
-  // 统一转大写，解决 CCTV13 vs cctv13 匹配问题
-  let cleanName = channelName.trim().toUpperCase();
-  // 移除非核心字符（保留字母、数字、中文）
-  cleanName = cleanName.replace(/[^\u4e00-\u9fa5A-Z0-9+]/g, "");
-  
-  // 处理特殊频道（如 CCTV5+）
-  if (cleanName.includes("5+")) cleanName = cleanName.replace("5+", "5PLUS");
-  
-  return cleanName;
+  return channelName.trim().toUpperCase().replace(/[^\u4e00-\u9fa5A-Z0-9+]/g, "");
 }
 
 /**
- * 2. 修复日期格式化（兼容多种输入格式）
+ * 2. 格式化日期（YYYY-MM-DD）
  */
 function getFormatDate(dateStr) {
   if (!dateStr) return new Date().toISOString().split("T")[0];
-  
-  // 清理非数字字符
   const numDate = dateStr.replace(/\D+/g, "");
   if (numDate.length < 8) return new Date().toISOString().split("T")[0];
-  
-  // 统一转为 YYYY-MM-DD 格式
-  const year = numDate.slice(0, 4);
-  const month = numDate.slice(4, 6);
-  const day = numDate.slice(6, 8);
-  return `${year}-${month}-${day}`;
+  return `${numDate.slice(0,4)}-${numDate.slice(4,6)}-${numDate.slice(6,8)}`;
 }
 
 /**
- * 3. 修复时间解析（兼容 EPG 标准格式：YYYYMMDDHHMMSS +0800）
+ * 3. 解析 EPG 时间（YYYYMMDDHHMMSS +0800 → Date 对象）
  */
 function parseEpgTime(timeStr) {
   if (!timeStr) return null;
-  
-  // 提取核心时间部分（去除时区和空格）
-  const cleanTime = timeStr.split(" ")[0];
-  if (cleanTime.length !== 14) return null; // 必须是 YYYYMMDDHHMMSS 格式
-  
-  const year = cleanTime.slice(0, 4);
-  const month = cleanTime.slice(4, 6);
-  const day = cleanTime.slice(6, 8);
-  const hour = cleanTime.slice(8, 10);
-  const min = cleanTime.slice(10, 12);
-  
-  // 返回本地时间（考虑时区偏移）
+  const cleanTime = timeStr.split(" ")[0]; // 提取 YYYYMMDDHHMMSS
+  if (cleanTime.length !== 14) return null;
+  const year = cleanTime.slice(0,4), month = cleanTime.slice(4,6), day = cleanTime.slice(6,8);
+  const hour = cleanTime.slice(8,10), min = cleanTime.slice(10,12);
   return new Date(`${year}-${month}-${day}T${hour}:${min}:00`);
 }
 
 /**
- * 4. 优化 XML 解析逻辑（支持 lang 属性+精准匹配）
+ * 4. 纯正则解析 XML（替代 DOMParser，适配 Cloudflare 环境）
  */
 function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
   const debugInfo = {
@@ -80,72 +56,90 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
   };
 
   try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xmlStr, "application/xml");
+    // ========== 步骤1：提取所有频道（channel 标签） ==========
+    const channelRegex = /<channel id="(\d+)">(.*?)<\/channel>/gs;
+    let channelMatch;
+    const channels = [];
 
-    // 收集所有频道信息（调试用）
-    const allChannels = doc.querySelectorAll("channel");
-    debugInfo.xmlChannels = Array.from(allChannels).map(channel => {
-      const id = channel.getAttribute("id");
-      const displayName = channel.querySelector('display-name[lang="zh"]')?.textContent || 
-                          channel.querySelector("display-name")?.textContent || "";
-      return {
-        id: id,
-        displayName: displayName,
-        cleanName: cleanChannelName(displayName)
-      };
-    });
-
-    // 1. 精准匹配（统一大小写后完全一致）
-    let channelNode = Array.from(allChannels).find(channel => {
-      const displayName = channel.querySelector('display-name[lang="zh"]')?.textContent || 
-                          channel.querySelector("display-name")?.textContent || "";
-      return cleanChannelName(displayName) === targetChannel;
-    });
-
-    // 2. 模糊匹配（备选方案）
-    if (!channelNode) {
-      channelNode = Array.from(allChannels).find(channel => {
-        const displayName = channel.querySelector('display-name[lang="zh"]')?.textContent || 
-                            channel.querySelector("display-name")?.textContent || "";
-        return cleanChannelName(displayName).includes(targetChannel);
-      });
+    while ((channelMatch = channelRegex.exec(xmlStr)) !== null) {
+      const channelId = channelMatch[1];
+      const channelContent = channelMatch[2];
+      
+      // 提取 display-name（优先 lang="zh"）
+      const nameRegex = /<display-name lang="zh">(.*?)<\/display-name>/;
+      let displayName = nameRegex.exec(channelContent)?.[1] || "";
+      if (!displayName) {
+        displayName = /<display-name>(.*?)<\/display-name>/.exec(channelContent)?.[1] || "";
+      }
+      
+      const cleanName = cleanChannelName(displayName);
+      channels.push({ id: channelId, displayName, cleanName });
     }
 
-    if (!channelNode) {
+    debugInfo.xmlChannels = channels;
+
+    // ========== 步骤2：匹配目标频道 ==========
+    let matchedChannel = channels.find(chan => chan.cleanName === targetChannel);
+    // 模糊匹配（备选）
+    if (!matchedChannel) {
+      matchedChannel = channels.find(chan => chan.cleanName.includes(targetChannel));
+    }
+
+    if (!matchedChannel) {
       debugInfo.error = "未找到匹配的频道";
-      return debug; // 返回调试信息
+      return debugInfo;
     }
+    debugInfo.matchedChannel = matchedChannel;
 
-    debugInfo.matchedChannel = {
-      id: channelNode.getAttribute("id"),
-      displayName: channelNode.querySelector('display-name[lang="zh"]')?.textContent || ""
-    };
-
-    // 过滤目标日期的节目
-    const channelId = channelNode.getAttribute("id");
+    // ========== 步骤3：提取该频道的所有节目 ==========
     const targetDateObj = new Date(targetDate);
     const nextDateObj = new Date(targetDateObj);
-    nextDateObj.setDate(nextDateObj.getDate()+1); // 次日 00:00:00
+    nextDateObj.setDate(nextDateObj.getDate() + 1);
 
-    const allProgrammes = doc.querySelectorAll(`programme[channel="${channelId}"]`);
-    debugInfo.matchedProgrammes = Array.from(allProgrammes).map(prog => {
-      const start = parseEpgTime(prog.getAttribute("start"));
-      const stop = parseEpgTime(prog.getAttribute("stop"));
-      const title = prog.querySelector('title[lang="zh"]')?.textContent || 
-                    prog.querySelector("title")?.textContent || "";
-      const desc = prog.querySelector('desc[lang="zh"]')?.textContent || 
-                   prog.querySelector("desc")?.textContent || "";
+    // 匹配指定 channel id 的 programme 标签
+    const programmeRegex = new RegExp(
+      `<programme start="([^"]+)" stop="([^"]+)" channel="${matchedChannel.id}">(.*?)<\/programme>`,
+      "gs"
+    );
+    let programmeMatch;
+    const programmes = [];
 
-      return {
-        start: start,
-        stop: stop,
-        title: title,
-        desc: desc,
-        isTargetDate: start && start >= targetDateObj && start < nextDateObj
-      };
-    }).filter(prog => prog.isTargetDate); // 只保留目标日期的节目
+    while ((programmeMatch = programmeRegex.exec(xmlStr)) !== null) {
+      const startStr = programmeMatch[1];
+      const stopStr = programmeMatch[2];
+      const progContent = programmeMatch[3];
+      
+      // 提取 title（优先 lang="zh"）
+      const titleRegex = /<title lang="zh">(.*?)<\/title>/;
+      let title = titleRegex.exec(progContent)?.[1] || "";
+      if (!title) {
+        title = /<title>(.*?)<\/title>/.exec(progContent)?.[1] || "";
+      }
+      
+      // 提取 desc（可选）
+      const descRegex = /<desc lang="zh">(.*?)<\/desc>/;
+      let desc = descRegex.exec(progContent)?.[1] || "";
+      if (!desc) {
+        desc = /<desc>(.*?)<\/desc>/.exec(progContent)?.[1] || "";
+      }
 
+      // 解析时间并过滤目标日期
+      const start = parseEpgTime(startStr);
+      const stop = parseEpgTime(stopStr);
+      const isTargetDate = start && start >= targetDateObj && start < nextDateObj;
+
+      if (isTargetDate) {
+        programmes.push({
+          start,
+          stop,
+          title,
+          desc,
+          isTargetDate
+        });
+      }
+    }
+
+    debugInfo.matchedProgrammes = programmes;
     return debugInfo;
 
   } catch (e) {
@@ -155,14 +149,15 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
 }
 
 /**
- * 5. 生成默认节目数据（兜底方案）
+ * 5. 生成默认节目数据
  */
 function getDefaultEpgData(channelName, date) {
+  const cleanName = cleanChannelName(channelName);
   return {
-    channel_name: cleanChannelName(channelName),
+    channel_name: cleanName,
     date: date,
     url: CONFIG.DEFAULT_URL,
-    icon: `${CONFIG.ICON_BASE_URL}${encodeURIComponent(cleanChannelName(channelName))}.png`,
+    icon: `${CONFIG.ICON_BASE_URL}${encodeURIComponent(cleanName)}.png`,
     epg_data: CONFIG.RET_DEFAULT ? Array.from({ length: 24 }, (_, hour) => {
       const nextHour = (hour + 1) % 24;
       return {
@@ -176,7 +171,7 @@ function getDefaultEpgData(channelName, date) {
 }
 
 /**
- * 主处理函数（Cloudflare Pages Functions 入口）
+ * 主处理函数（Cloudflare Pages 入口）
  */
 export async function onRequest(context) {
   try {
@@ -185,12 +180,12 @@ export async function onRequest(context) {
     const queryParams = Object.fromEntries(url.searchParams.entries());
     const isDebug = queryParams.debug === "1" || CONFIG.DEBUG;
 
-    // 1. 解析核心参数
+    // 解析参数
     const oriChannelName = queryParams.ch || queryParams.channel || "";
     const cleanChannel = cleanChannelName(oriChannelName);
     const targetDate = getFormatDate(queryParams.date);
 
-    // 2. 频道为空时返回 404
+    // 频道为空返回404
     if (!cleanChannel) {
       return new Response("404 Not Found. <br>未指定频道参数", {
         status: 404,
@@ -198,16 +193,15 @@ export async function onRequest(context) {
       });
     }
 
-    // 3. 获取 EPG XML（优先缓存，缓存 24 小时）
+    // 获取 EPG XML（带缓存）
     const cache = caches.default;
     let cachedResponse = await cache.match(CONFIG.EPG_XML_URL);
     let xmlStr;
 
-    // 缓存未命中则重新下载
     if (!cachedResponse) {
       const xmlResponse = await fetch(CONFIG.EPG_XML_URL, {
         headers: { "User-Agent": "Cloudflare EPG Fetcher" },
-        cf: { cacheTtl: 86400 } // 边缘缓存 24 小时
+        cf: { cacheTtl: 86400 }
       });
 
       if (!xmlResponse.ok) {
@@ -215,7 +209,6 @@ export async function onRequest(context) {
       }
 
       xmlStr = await xmlResponse.text();
-      // 存入缓存
       await cache.put(CONFIG.EPG_XML_URL, new Response(xmlStr, {
         headers: {
           "Cache-Control": "max-age=86400",
@@ -226,12 +219,12 @@ export async function onRequest(context) {
       xmlStr = await cachedResponse.text();
     }
 
-    // 4. 解析 XML 并提取节目数据
+    // 解析 XML 提取节目
     const parseResult = parseEpgXml(xmlStr, cleanChannel, targetDate, isDebug);
     let epgData;
 
-    if (parseResult.matchedProgrammes && parseResult.matchedProgrammes.length > 0) {
-      // 格式化节目数据（适配 diyp 格式）
+    if (parseResult.matchedProgrammes.length > 0) {
+      // 有匹配的节目数据
       epgData = {
         channel_name: cleanChannel,
         date: targetDate,
@@ -244,21 +237,15 @@ export async function onRequest(context) {
           desc: prog.desc
         }))
       };
+      // 调试模式添加额外信息
+      if (isDebug) epgData.debug = parseResult;
     } else {
-      // 未找到数据时返回默认值（并添加调试信息）
+      // 无匹配数据返回默认值
       epgData = getDefaultEpgData(oriChannelName, targetDate);
-      if (isDebug) {
-        epgData.debug = {
-          reason: parseResult.error || "未找到目标日期的节目",
-          xmlChannels: parseResult.xmlChannels.slice(0, 5), // 只显示前 5 个频道用于调试
-          matchedChannel: parseResult.matchedChannel,
-          targetDate: targetDate,
-          requestChannel: cleanChannel
-        };
-      }
+      if (isDebug) epgData.debug = parseResult;
     }
 
-    // 5. 返回响应
+    // 返回响应
     return new Response(JSON.stringify(epgData, null, 2), {
       status: 200,
       headers: {

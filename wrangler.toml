@@ -1,0 +1,2 @@
+[env.production]
+compatibility_flags = ["nodejs_compat"] # 启用Node.js兼容模式

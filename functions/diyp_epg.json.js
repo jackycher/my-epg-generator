@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 
-// 替换为你的GitHub Raw地址（必须确认正确）
+// 替换为你的GitHub Raw地址（必须确认可直接访问）
 const EPG_XML_RAW_URL = 'https://raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml';
 
 // 核心解析函数（适配你的规范XML格式）
@@ -86,9 +86,14 @@ function parseEpgToDiyp(xmlContent) {
   return Object.values(channelMap);
 }
 
-// Cloudflare Pages 入口函数
+// Cloudflare Pages 入口函数（核心修复URL参数解析）
 export async function onRequestGet(context) {
   try {
+    // 防护：确保context.request存在
+    if (!context || !context.request) {
+      throw new Error('context.request 未定义');
+    }
+
     // 1. 读取GitHub Raw的epg.xml
     const response = await fetch(EPG_XML_RAW_URL, {
       headers: { 
@@ -99,42 +104,43 @@ export async function onRequestGet(context) {
     });
 
     if (!response.ok) {
-      return new Response(
-        JSON.stringify({ error: `获取epg.xml失败：HTTP ${response.status}`, epg: [] }),
-        { 
-          status: 500,
-          headers: { 'Content-Type': 'application/json; charset=utf-8' }
-        }
-      );
+      throw new Error(`获取epg.xml失败：HTTP ${response.status}`);
     }
 
     // 2. 读取XML内容
     const xmlContent = await response.text();
     if (!xmlContent) {
-      return new Response(
-        JSON.stringify({ error: 'epg.xml内容为空', epg: [] }),
-        { headers: { 'Content-Type': 'application/json; charset=utf-8' } }
-      );
+      throw new Error('epg.xml内容为空');
     }
 
     // 3. 解析为DIYP格式
     const diypEpg = parseEpgToDiyp(xmlContent);
 
-    // 4. 处理ch参数（模糊筛选，忽略大小写）
-    const chParam = ((context.request.url.searchParams.get('ch') || '') + '').trim().toLowerCase();
+    // ========== 核心修复：正确解析URL参数 ==========
+    let chParam = '';
+    try {
+      // 先把url转为URL对象，再获取searchParams
+      const url = new URL(context.request.url);
+      // 安全获取ch参数：强制转字符串+trim+小写
+      chParam = ((url.searchParams.get('ch') || '') + '').trim().toLowerCase();
+    } catch (urlError) {
+      console.warn('URL参数解析失败：', urlError.message);
+      chParam = ''; // 解析失败则默认空（返回全量）
+    }
+
+    // 4. 筛选频道（无参数返回全量，有参数模糊匹配）
     let filteredEpg = diypEpg;
-    
     if (chParam) {
       filteredEpg = diypEpg.filter(channel => {
-        const channelName = (channel.name || '') + '';
-        const tvgid = (channel.tvgid || '') + '';
-        return channelName.toLowerCase().includes(chParam) || tvgid.toLowerCase().includes(chParam);
+        const channelName = ((channel.name || '') + '').toLowerCase();
+        const tvgid = ((channel.tvgid || '') + '').toLowerCase();
+        return channelName.includes(chParam) || tvgid.includes(chParam);
       });
     }
 
-    // 5. 返回响应（解决跨域）
+    // 5. 返回响应（解决跨域+格式化JSON）
     return new Response(
-      JSON.stringify({ epg: filteredEpg }, null, 2), // 格式化JSON，便于调试
+      JSON.stringify({ epg: filteredEpg }, null, 2),
       { 
         headers: { 
           'Content-Type': 'application/json; charset=utf-8',
@@ -146,12 +152,16 @@ export async function onRequestGet(context) {
 
   } catch (error) {
     // 详细错误日志，便于调试
-    console.error('解析失败详情：', error);
+    console.error('整体解析失败详情：', error);
     return new Response(
       JSON.stringify({ 
         error: `解析失败：${error.message}`, 
         epg: [],
-        debug: '可检查GitHub Raw地址是否正确，或XML格式是否规范'
+        debug: [
+          '1. 检查GitHub Raw地址是否可直接访问',
+          '2. 检查XML格式是否规范',
+          '3. 错误类型：' + error.name
+        ]
       }),
       { 
         status: 500,

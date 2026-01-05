@@ -323,7 +323,9 @@ def generate_m3u_content(channels):
             extinf_parts.append(f'channel-number="{htmlspecialchars(item["chno"])}"')
         if item['tvg_id']:
             extinf_parts.append(f'tvg-id="{htmlspecialchars(item["tvg_id"])}"')
-        extinf_parts.append(f'tvg-name="{htmlspecialchars(tvg_name)}"')
+        # 修改tvg_name 为name 避免出现高清字样，直接使用txt名称
+        # extinf_parts.append(f'tvg-name="{htmlspecialchars(tvg_name)}"')
+        extinf_parts.append(f'tvg-name="{htmlspecialchars(name)}"')
         if tvg_logo:
             extinf_parts.append(f'tvg-logo="{htmlspecialchars(tvg_logo)}"')
         extinf_parts.append(f'group-title="{htmlspecialchars(group)}"')

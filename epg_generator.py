@@ -20,8 +20,10 @@ import urllib.parse
 # ===================== EPG配置区 =====================
 EPG_CONFIG = {
     'ENABLE_OFFICIAL_EPG': False,
-    # 新增：外部EPG总开关
+    # 外部EPG总开关
     'ENABLE_EXTERNAL_EPG': True,
+    # 新增：是否保留外部EPG源中的其他频道（非txt文件里的频道）
+    'ENABLE_KEEP_OTHER_CHANNELS': True,
     'EPG_SERVER_URL': "http://210.13.21.3",
     'BJcul_PATH': "./bjcul.txt",
     'EPG_SAVE_PATH': "./epg.xml",
@@ -42,7 +44,6 @@ EPG_CONFIG = {
             "name": "主EPG源-zzzz0317",
             "is_official": False,
             "clean_name": True,
-            # 新增：单个源启用开关
             "enabled": True
         },
         {
@@ -50,7 +51,6 @@ EPG_CONFIG = {
             "name": "备用EPG源1-zsdc",
             "is_official": False,
             "clean_name": True,
-            # 新增：单个源启用开关
             "enabled": True
         },
         {
@@ -58,15 +58,13 @@ EPG_CONFIG = {
             "name": "备用EPG源2-e.erw.cc",
             "is_official": False,
             "clean_name": True,
-            # 新增：单个源启用开关
-            "enabled": False  # 示例：关闭这个源
+            "enabled": False
         },
         {
             "url": "https://gitee.com/taksssss/tv/raw/main/epg/112114.xml.gz",
             "name": "备用EPG源3-112114",
             "is_official": False,
             "clean_name": True,
-            # 新增：单个源启用开关
             "enabled": True
         },
         {
@@ -74,8 +72,7 @@ EPG_CONFIG = {
             "name": "备用EPG源4-51zmt",
             "is_official": False,
             "clean_name": True,
-            # 新增：单个源启用开关
-            "enabled": False  # 示例：关闭这个源
+            "enabled": False
         }
     ],
     'PLAYLIST_FILE_PATH': "https://raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/playlist-zz.json",
@@ -359,10 +356,14 @@ def download_url(url):
     return None
 
 def parse_external_epg(epg_data, is_official=False):
-    """解析外部EPG"""
-    external_epg_map = {}
-    ext_channel_identifiers = []
-    id_to_name_map = {}
+    """解析外部EPG（增强版：返回完整的频道信息和节目）"""
+    external_epg_map = {}  # 用于匹配的映射（key: 频道标识，value: 节目列表）
+    ext_channel_identifiers = []  # 频道标识列表
+    id_to_name_map = {}  # id到频道名的映射
+    # 新增：完整的频道信息（保留所有频道）
+    full_channel_info = {}  # key: 频道id，value: {id, main_name, aliases}
+    # 新增：完整的节目信息（保留所有节目）
+    full_program_info = []  # 所有节目列表 [{"channel_id": "", "start": "", "stop": "", "title": ""}]
     
     try:
         # 解压
@@ -374,31 +375,41 @@ def parse_external_epg(epg_data, is_official=False):
         # 解析XML
         ext_xml = ET.fromstring(epg_data.decode("utf-8", errors="ignore"))
         
-        # 提取频道
-        ext_channel_info = {}
+        # 提取所有频道（完整保留）
         for channel in ext_xml.findall(".//channel"):
             cid = channel.get("id", "")
             if not cid:
                 continue
             aliases = [elem.text.strip() for elem in channel.findall("display-name") if elem.text and elem.text.strip()]
             main_name = aliases[0] if aliases else cid
-            ext_channel_info[cid] = {"main_name": main_name, "id": cid}
+            full_channel_info[cid] = {
+                "id": cid,
+                "main_name": main_name,
+                "aliases": aliases
+            }
             id_to_name_map[cid] = main_name
+            ext_channel_identifiers.append(main_name if not is_official else cid)
         
-        # 提取节目
+        # 提取所有节目（完整保留）
         for prog in ext_xml.findall(".//programme"):
             cid = prog.get("channel", "")
             start = prog.get("start")
             stop = prog.get("stop")
             if not cid or not start or not stop:
                 continue
-            if cid not in ext_channel_info:
+            if cid not in full_channel_info:
                 continue
             
             title = extract_program_title(prog)
-            channel_info = ext_channel_info[cid]
-            key = cid if is_official else channel_info["main_name"]
+            full_program_info.append({
+                "channel_id": cid,
+                "start": start,
+                "stop": stop,
+                "title": title
+            })
             
+            # 维护原有映射（兼容旧逻辑）
+            key = cid if is_official else full_channel_info[cid]["main_name"]
             if key not in external_epg_map:
                 external_epg_map[key] = []
             external_epg_map[key].append({
@@ -408,13 +419,14 @@ def parse_external_epg(epg_data, is_official=False):
             })
         
         ext_channel_identifiers = list(external_epg_map.keys())
-        write_log(f"EPG解析完成 - 频道{len(ext_channel_identifiers)}个，节目{sum(len(v) for v in external_epg_map.values())}条", "EPG_PARSE_DETAIL")
+        write_log(f"EPG解析完成 - 频道{len(full_channel_info)}个（总），匹配用{len(ext_channel_identifiers)}个，节目{len(full_program_info)}条（总）", "EPG_PARSE_DETAIL")
     
     except Exception as e:
         error_info = f"解析失败：{str(e)}\n{traceback.format_exc()}"
         write_log(error_info, "EPG_PARSE_ERROR")
     
-    return external_epg_map, ext_channel_identifiers, id_to_name_map
+    # 返回增强后的结果：原有结果 + 完整频道/节目信息
+    return external_epg_map, ext_channel_identifiers, id_to_name_map, full_channel_info, full_program_info
 
 # ===================== 主函数 =====================
 def epg_main():
@@ -435,8 +447,12 @@ def epg_main():
     format_config = config['FORMAT_MAPPING'][config['PLAYLIST_FORMAT']]
     write_log(f"使用格式配置：{config['PLAYLIST_FORMAT']}", "CONFIG")
     write_log(f"官方EPG：{'开启' if config['ENABLE_OFFICIAL_EPG'] else '关闭'}", "CONFIG")
-    # 新增：打印外部EPG总开关状态
     write_log(f"外部EPG：{'开启' if config['ENABLE_EXTERNAL_EPG'] else '关闭'}", "CONFIG")
+    write_log(f"保留其他频道：{'开启' if config['ENABLE_KEEP_OTHER_CHANNELS'] else '关闭'}", "CONFIG")
+    
+    # 新增：存储所有外部源的完整频道和节目
+    all_external_channels = {}  # key: 频道id，value: 频道信息（去重）
+    all_external_programs = []   # 所有外部节目（去重前）
     
     try:
         # 步骤1：读取bjcul.txt
@@ -609,12 +625,11 @@ def epg_main():
         total_matched_by_external = 0
         pending_channels = unmatched_bjcul_channels
         
-        # 新增：判断外部EPG总开关是否关闭
         if not config['ENABLE_EXTERNAL_EPG']:
             write_log("外部EPG总开关关闭，跳过所有外部源匹配", "STEP4_SKIP_ALL")
             print(f"[4/7] 外部EPG总开关关闭，跳过所有外部源匹配")
         else:
-            # 遍历外部源（新增：过滤掉disabled的源）
+            # 遍历外部源（过滤掉disabled的源）
             enabled_sources = [s for s in config['EXTERNAL_EPG_SOURCES'] if s.get("enabled", True)]
             write_log(f"外部EPG总开关开启，有效源数量：{len(enabled_sources)}（总源数：{len(config['EXTERNAL_EPG_SOURCES'])}）", "STEP4_SOURCE_COUNT")
             
@@ -637,13 +652,22 @@ def epg_main():
                     write_log(f"源{source_name}下载失败", "STEP4_SOURCE_FAIL")
                     continue
                 
-                # 解析EPG源
-                epg_map, epg_identifiers, id_to_name_map = parse_external_epg(epg_data, is_official)
+                # 解析EPG源（增强版）
+                epg_map, epg_identifiers, id_to_name_map, full_channel_info, full_program_info = parse_external_epg(epg_data, is_official)
                 if not epg_map or len(epg_identifiers) == 0:
                     write_log(f"源{source_name}解析失败", "STEP4_SOURCE_PARSE_FAIL")
                     continue
                 
-                # 匹配频道
+                # 新增：收集外部源的所有频道和节目（去重）
+                if config['ENABLE_KEEP_OTHER_CHANNELS']:
+                    # 合并频道（按id去重）
+                    for cid, channel_info in full_channel_info.items():
+                        if cid not in all_external_channels:
+                            all_external_channels[cid] = channel_info
+                    # 合并节目
+                    all_external_programs.extend(full_program_info)
+                
+                # 原有匹配逻辑
                 matched_in_this_source = 0
                 new_pending_channels = []
                 for channel in pending_channels:
@@ -715,7 +739,7 @@ def epg_main():
             "generated-time": "UTC" + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
         
-        # 添加频道
+        # 第一步：添加txt匹配的频道
         channel_add_count = 0
         for channel_code in matched_channels.keys():
             channel_info = matched_channels[channel_code]
@@ -725,7 +749,7 @@ def epg_main():
             ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = raw_name
             channel_add_count += 1
         
-        # 添加临时频道
+        # 第二步：添加临时频道
         temp_channel_add_count = 0
         for channel in unmatched_bjcul_channels:
             if channel["local_num"] and channel["local_num"].startswith(temp_local_num_prefix):
@@ -735,15 +759,52 @@ def epg_main():
                 ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = raw_name
                 temp_channel_add_count += 1
         
-        # 添加节目（去重）
+        # 第三步：新增：添加外部源的其他频道（如果开启开关）
+        other_channel_add_count = 0
+        if config['ENABLE_KEEP_OTHER_CHANNELS'] and all_external_channels:
+            # 先收集已存在的频道ID（避免重复）
+            existing_channel_ids = set()
+            for channel_elem in root.findall(".//channel"):
+                existing_channel_ids.add(channel_elem.get("id"))
+            
+            # 添加外部源中未存在的频道
+            for cid, channel_info in all_external_channels.items():
+                if cid in existing_channel_ids:
+                    continue
+                channel_elem = ET.SubElement(root, "channel", {"id": cid})
+                # 添加主名称
+                ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = channel_info["main_name"]
+                # 添加别名（可选）
+                for alias in channel_info["aliases"][1:]:  # 跳过第一个（主名称）
+                    ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = alias
+                other_channel_add_count += 1
+            write_log(f"添加外部源其他频道：{other_channel_add_count}个", "STEP5_OTHER_CHANNELS")
+        
+        # 第四步：准备所有节目（原有节目 + 外部源节目）
+        all_programs = []
+        # 原有节目（txt相关）
+        all_programs.extend(programme_list)
+        # 新增：外部源其他节目（如果开启开关）
+        if config['ENABLE_KEEP_OTHER_CHANNELS'] and all_external_programs:
+            # 转换格式并添加
+            for prog in all_external_programs:
+                all_programs.append({
+                    "channel": prog["channel_id"],
+                    "start": prog["start"],
+                    "stop": prog["stop"],
+                    "title": prog["title"]
+                })
+        
+        # 第五步：添加节目（去重）
         seen_progs = set()
-        sorted_progs = sorted(programme_list, key=lambda x: (x["channel"], x["start"]))
+        sorted_progs = sorted(all_programs, key=lambda x: (x["channel"], x["start"]))
         prog_add_count = 0
         non_unknown_count = 0
         
         for prog in sorted_progs:
             if not prog.get("channel") or not prog.get("start") or not prog.get("title"):
                 continue
+            # 去重键：频道+开始时间+标题
             key = (prog["channel"], prog["start"], prog["title"])
             if key in seen_progs:
                 continue
@@ -767,8 +828,8 @@ def epg_main():
             short_empty_elements=False
         )
         os.chmod(config['EPG_SAVE_PATH'], 0o644)
-        print(f"[6/7] 生成EPG：{config['EPG_SAVE_PATH']}（去重后{prog_add_count}条）")
-        write_log(f"XML生成成功：{config['EPG_SAVE_PATH']}", "STEP5")
+        print(f"[6/7] 生成EPG：{config['EPG_SAVE_PATH']}（去重后{prog_add_count}条，含外部源其他频道{other_channel_add_count}个）")
+        write_log(f"XML生成成功：{config['EPG_SAVE_PATH']}，总频道{channel_add_count + temp_channel_add_count + other_channel_add_count}个（txt{channel_add_count} + 临时{temp_channel_add_count} + 外部{other_channel_add_count}）", "STEP5")
         
         # 压缩GZ
         print("[6/7] 压缩为epg.xml.gz...")
@@ -785,13 +846,13 @@ def epg_main():
             "匹配ID频道": match_success_count,
             "外部匹配成功": total_matched_by_external,
             "最终未匹配": total_unmatched_final,
-            "EPG频道数": channel_add_count + temp_channel_add_count,
+            "EPG频道数": channel_add_count + temp_channel_add_count + other_channel_add_count,
             "EPG节目数(去重)": prog_add_count,
-            "非未知节目": non_unknown_count
+            "非未知节目": non_unknown_count,
+            "外部源其他频道": other_channel_add_count
         }
         
-        print(f"[7/7] 运行完成：耗时{summary['总耗时(秒)']}秒，非未知节目{summary['非未知节目']}条")
-        print(f"✅ EPG生成：{config['EPG_SAVE_PATH']}, {config['EPG_GZ_PATH']}")
+        print(f"[7/7] 运行完成：耗时{summary['总耗时(秒)']}秒，非未知节目{summary['非未知节目']}条，外部源其他频道{summary['外部源其他频道']}个")
         write_log("="*30 + " 运行结果 " + "="*30, "STEP6_SUMMARY")
         for key, value in summary.items():
             write_log(f"{key}：{value}", "STEP6_SUMMARY")

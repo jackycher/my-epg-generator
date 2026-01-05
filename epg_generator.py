@@ -73,6 +73,13 @@ EPG_CONFIG = {
             "is_official": False,
             "clean_name": True,
             "enabled": False
+        },
+        {
+            "url": "https://gitee.com/taksssss/tv/raw/main/epg/epgpw_cn.xml.gz",
+            "name": "备用EPG源5-epgpw_cn",
+            "is_official": False,
+            "clean_name": True,
+            "enabled": False
         }
     ],
     'PLAYLIST_FILE_PATH': "https://raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/playlist-zz.json",

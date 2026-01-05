@@ -51,7 +51,7 @@ EPG_CONFIG = {
             "name": "备用EPG源1-zsdc",
             "is_official": False,
             "clean_name": True,
-            "enabled": True
+            "enabled": False
         },
         {
             "url": "https://raw.githubusercontent.com/kuke31/xmlgz/main/all.xml.gz",
@@ -65,7 +65,7 @@ EPG_CONFIG = {
             "name": "备用EPG源3-112114",
             "is_official": False,
             "clean_name": True,
-            "enabled": True
+            "enabled": False
         },
         {
             "url": "https://raw.githubusercontent.com/taksssss/tv/main/epg/erw.xml.gz",

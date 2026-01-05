@@ -68,7 +68,7 @@ EPG_CONFIG = {
             "enabled": True
         },
         {
-            "url": "https://gitee.com/taksssss/tv/raw/main/epg/erw.xml.gz",
+            "url": "https://raw.githubusercontent.com/taksssss/tv/main/epg/erw.xml.gz",
             "name": "备用EPG源4-erw",
             "is_official": False,
             "clean_name": True,

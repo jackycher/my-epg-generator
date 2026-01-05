@@ -1,8 +1,8 @@
 /**
  * Cloudflare Pages EPG 转 diyp 格式脚本（无 DOM 依赖）
  * 路径：/functions/diyp_epg.js
- * 访问：https://你的域名/diyp_epg?ch=CCTV1&date=20251224&debug=1
- * 修复点：1. 支持非数字channel ID解析 2. 放宽频道名清理规则 3. 优化双向模糊匹配
+ * 访问：https://你的域名/diyp_epg?ch=CHC影迷电影&date=20260105&debug=1
+ * 修复点：1. 兼容XML标签闭合/空格 2. 增强display-name提取 3. 完善调试信息
  */
 
 const CONFIG = {
@@ -16,14 +16,27 @@ const CONFIG = {
 
 /**
  * 1. 清理频道名（放宽规则：仅移除HTML特殊字符+多余空格，不强制大写）
- * 修复：移除强制转大写，仅过滤危险字符，保留更多频道名特征
  */
 function cleanChannelName(channelName) {
   if (!channelName) return "";
-  // 仅移除HTML特殊字符、多余空格，保留中文/字母/数字/特殊标识（如4K、+、-等）
+  // 仅移除HTML特殊字符、多余空格、不可见字符，保留核心特征
   return channelName.trim()
-    .replace(/[<>&"']/g, "") // 只移除HTML特殊字符
-    .replace(/\s+/g, "");    // 移除多个连续空格为单个（最终trim后无空格）
+    .replace(/[<>&"']/g, "") // 移除HTML特殊字符
+    .replace(/\s+/g, "")    // 移除连续空格
+    .replace(/[\u200B-\u200D\uFEFF]/g, ""); // 移除零宽空格等不可见字符
+}
+
+/**
+ * 新增：计算两个字符串的相似度（简化版编辑距离）
+ * 用于近似匹配（比如4K纪实专区 → 4K超清）
+ */
+function getStringSimilarity(str1, str2) {
+  if (!str1 || !str2) return 0;
+  const set1 = new Set(str1.split(""));
+  const set2 = new Set(str2.split(""));
+  const intersection = [...set1].filter(char => set2.has(char)).length;
+  const union = new Set([...set1, ...set2]).size;
+  return union === 0 ? 0 : intersection / union;
 }
 
 /**
@@ -50,20 +63,21 @@ function parseEpgTime(timeStr) {
 
 /**
  * 4. 纯正则解析 XML（替代 DOMParser，适配 Cloudflare 环境）
- * 修复：1. 支持非数字channel ID解析 2. 优化双向模糊匹配逻辑
+ * 优化：1. 兼容XML标签空格/闭合 2. 增强display-name提取 3. 完善调试信息
  */
 function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
   const debugInfo = {
     target: { channel: targetChannel, date: targetDate },
     xmlChannels: [],
+    allChannelNames: [], // 新增：所有频道的cleanName列表（方便排查）
     matchedChannel: null,
     matchedProgrammes: [],
-    error: null
+    error: null,
+    similarityMatch: null
   };
 
   try {
     // ========== 步骤1：提取所有频道（channel 标签） ==========
-    // 修复：正则从 \d+ 改为 [^"]+，匹配任意非双引号的ID（支持数字/字母/中文/特殊字符）
     const channelRegex = /<channel id="([^"]+)">(.*?)<\/channel>/gs;
     let channelMatch;
     const channels = [];
@@ -72,11 +86,14 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
       const channelId = channelMatch[1];
       const channelContent = channelMatch[2];
       
-      // 提取 display-name（优先 lang="zh"）
-      const nameRegex = /<display-name lang="zh">(.*?)<\/display-name>/;
-      let displayName = nameRegex.exec(channelContent)?.[1] || "";
+      // 优化：兼容 display-name 标签的空格、额外属性（lang="zh"、lang="zh-CN"等）
+      const zhNameRegex = /<display-name\s+lang="zh(?:-[A-Za-z]+)?"\s*>(.*?)<\/display-name>/is;
+      let displayName = zhNameRegex.exec(channelContent)?.[1] || "";
+      
+      // 备选：匹配任意 display-name（无lang属性或其他lang）
       if (!displayName) {
-        displayName = /<display-name>(.*?)<\/display-name>/.exec(channelContent)?.[1] || "";
+        const anyNameRegex = /<display-name\s*>(.*?)<\/display-name>/is;
+        displayName = anyNameRegex.exec(channelContent)?.[1] || "";
       }
       
       const cleanName = cleanChannelName(displayName);
@@ -84,27 +101,48 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
     }
 
     debugInfo.xmlChannels = channels;
+    debugInfo.allChannelNames = channels.map(chan => chan.cleanName); // 保存所有频道名
 
-    // ========== 步骤2：匹配目标频道（优化双向模糊匹配） ==========
+    // ========== 步骤2：匹配目标频道（优化容错性） ==========
+    const cleanTarget = cleanChannelName(targetChannel); // 二次清理目标值
     let matchedChannel = null;
-    // 步骤2.1：精确匹配（原逻辑）
-    matchedChannel = channels.find(chan => chan.cleanName === targetChannel);
-    
-    // 步骤2.2：双向模糊匹配（XML频道名包含用户关键词 OR 用户关键词包含XML频道名）
+
+    // 步骤2.1：精确匹配（去除不可见字符后）
+    matchedChannel = channels.find(chan => chan.cleanName === cleanTarget);
+
+    // 步骤2.2：双向模糊匹配
     if (!matchedChannel) {
       matchedChannel = channels.find(chan => 
-        chan.cleanName.includes(targetChannel) || targetChannel.includes(chan.cleanName)
+        chan.cleanName.includes(cleanTarget) || cleanTarget.includes(chan.cleanName)
       );
     }
 
-    // 步骤2.3：前缀匹配（针对CHC/CCTV/4K等特征前缀）
-    if (!matchedChannel && targetChannel.length >= 2) {
-      const prefix = targetChannel.slice(0, 3); // 取前3个字符作为前缀
+    // 步骤2.3：相似度匹配
+    if (!matchedChannel) {
+      const channelWithSimilarity = channels.map(chan => ({
+        ...chan,
+        similarity: getStringSimilarity(chan.cleanName, cleanTarget)
+      })).filter(chan => chan.similarity >= 0.3);
+      
+      if (channelWithSimilarity.length > 0) {
+        channelWithSimilarity.sort((a, b) => b.similarity - a.similarity);
+        matchedChannel = channelWithSimilarity[0];
+        debugInfo.similarityMatch = {
+          matchedChannel: matchedChannel,
+          similarity: matchedChannel.similarity,
+          candidateChannels: channelWithSimilarity.slice(0, 3)
+        };
+      }
+    }
+
+    // 步骤2.4：前缀匹配
+    if (!matchedChannel && cleanTarget.length >= 2) {
+      const prefix = cleanTarget.slice(0, 3);
       matchedChannel = channels.find(chan => chan.cleanName.startsWith(prefix));
     }
 
     if (!matchedChannel) {
-      debugInfo.error = "未找到匹配的频道";
+      debugInfo.error = `未找到匹配的频道（目标：${cleanTarget}，所有频道数：${channels.length}）`;
       return debugInfo;
     }
     debugInfo.matchedChannel = matchedChannel;
@@ -114,7 +152,7 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
     const nextDateObj = new Date(targetDateObj);
     nextDateObj.setDate(nextDateObj.getDate() + 1);
 
-    // 匹配指定 channel id 的 programme 标签（适配非数字ID，转义特殊字符）
+    // 匹配指定 channel id 的 programme 标签（转义特殊字符）
     const escapedChannelId = matchedChannel.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const programmeRegex = new RegExp(
       `<programme start="([^"]+)" stop="([^"]+)" channel="${escapedChannelId}">(.*?)<\/programme>`,
@@ -128,18 +166,18 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
       const stopStr = programmeMatch[2];
       const progContent = programmeMatch[3];
       
-      // 提取 title（优先 lang="zh"）
-      const titleRegex = /<title lang="zh">(.*?)<\/title>/;
+      // 优化：提取 title（兼容lang属性差异）
+      const titleRegex = /<title\s+lang="zh(?:-[A-Za-z]+)?"\s*>(.*?)<\/title>/is;
       let title = titleRegex.exec(progContent)?.[1] || "";
       if (!title) {
-        title = /<title>(.*?)<\/title>/.exec(progContent)?.[1] || "";
+        title = /<title\s*>(.*?)<\/title>/is.exec(progContent)?.[1] || "";
       }
       
-      // 提取 desc（可选）
-      const descRegex = /<desc lang="zh">(.*?)<\/desc>/;
+      // 优化：提取 desc（兼容lang属性差异）
+      const descRegex = /<desc\s+lang="zh(?:-[A-Za-z]+)?"\s*>(.*?)<\/desc>/is;
       let desc = descRegex.exec(progContent)?.[1] || "";
       if (!desc) {
-        desc = /<desc>(.*?)<\/desc>/.exec(progContent)?.[1] || "";
+        desc = /<desc\s*>(.*?)<\/desc>/is.exec(progContent)?.[1] || "";
       }
 
       // 解析时间并过滤目标日期
@@ -212,15 +250,16 @@ export async function onRequest(context) {
       });
     }
 
-    // 获取 EPG XML（带缓存）
+    // 获取 EPG XML（带缓存，强制刷新一次缓存避免旧数据影响）
     const cache = caches.default;
     let cachedResponse = await cache.match(CONFIG.EPG_XML_URL);
     let xmlStr;
 
-    if (!cachedResponse) {
+    // 新增：如果是调试模式，跳过缓存（避免旧XML影响排查）
+    if (isDebug || !cachedResponse) {
       const xmlResponse = await fetch(CONFIG.EPG_XML_URL, {
         headers: { "User-Agent": "Cloudflare EPG Fetcher" },
-        cf: { cacheTtl: 86400 }
+        cf: { cacheTtl: isDebug ? 60 : 86400 } // 调试模式缓存1分钟，正常模式24小时
       });
 
       if (!xmlResponse.ok) {
@@ -230,7 +269,7 @@ export async function onRequest(context) {
       xmlStr = await xmlResponse.text();
       await cache.put(CONFIG.EPG_XML_URL, new Response(xmlStr, {
         headers: {
-          "Cache-Control": "max-age=86400",
+          "Cache-Control": `max-age=${isDebug ? 60 : 86400}`,
           "Content-Type": "application/xml; charset=utf-8"
         }
       }));
@@ -256,7 +295,6 @@ export async function onRequest(context) {
           desc: prog.desc
         }))
       };
-      // 调试模式添加额外信息
       if (isDebug) epgData.debug = parseResult;
     } else {
       // 无匹配数据返回默认值

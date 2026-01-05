@@ -58,7 +58,7 @@ EPG_CONFIG = {
             "name": "备用EPG源2-e.erw.cc",
             "is_official": False,
             "clean_name": True,
-            "enabled": True
+            "enabled": False
         },
         {
             "url": "https://gitee.com/taksssss/tv/raw/main/epg/112114.xml.gz",
@@ -72,7 +72,7 @@ EPG_CONFIG = {
             "name": "备用EPG源4-51zmt",
             "is_official": False,
             "clean_name": True,
-            "enabled": True
+            "enabled": False
         },
         {
             "url": "https://gitee.com/taksssss/tv/raw/main/epg/epgpw_cn.xml.gz",

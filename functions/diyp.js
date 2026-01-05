@@ -2,6 +2,7 @@
  * Cloudflare Pages EPG 转 diyp 格式脚本（无 DOM 依赖）
  * 路径：/functions/diyp_epg.js
  * 访问：https://你的域名/diyp_epg?ch=CCTV1&date=20251224&debug=1
+ * 修复点：1. 支持非数字channel ID解析 2. 放宽频道名清理规则 3. 优化双向模糊匹配
  */
 
 const CONFIG = {
@@ -14,11 +15,15 @@ const CONFIG = {
 };
 
 /**
- * 1. 清理频道名（统一大写+去特殊字符）
+ * 1. 清理频道名（放宽规则：仅移除HTML特殊字符+多余空格，不强制大写）
+ * 修复：移除强制转大写，仅过滤危险字符，保留更多频道名特征
  */
 function cleanChannelName(channelName) {
   if (!channelName) return "";
-  return channelName.trim().toUpperCase().replace(/[^\u4e00-\u9fa5A-Z0-9+]/g, "");
+  // 仅移除HTML特殊字符、多余空格，保留中文/字母/数字/特殊标识（如4K、+、-等）
+  return channelName.trim()
+    .replace(/[<>&"']/g, "") // 只移除HTML特殊字符
+    .replace(/\s+/g, "");    // 移除多个连续空格为单个（最终trim后无空格）
 }
 
 /**
@@ -45,6 +50,7 @@ function parseEpgTime(timeStr) {
 
 /**
  * 4. 纯正则解析 XML（替代 DOMParser，适配 Cloudflare 环境）
+ * 修复：1. 支持非数字channel ID解析 2. 优化双向模糊匹配逻辑
  */
 function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
   const debugInfo = {
@@ -57,7 +63,8 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
 
   try {
     // ========== 步骤1：提取所有频道（channel 标签） ==========
-    const channelRegex = /<channel id="(\d+)">(.*?)<\/channel>/gs;
+    // 修复：正则从 \d+ 改为 [^"]+，匹配任意非双引号的ID（支持数字/字母/中文/特殊字符）
+    const channelRegex = /<channel id="([^"]+)">(.*?)<\/channel>/gs;
     let channelMatch;
     const channels = [];
 
@@ -78,11 +85,22 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
 
     debugInfo.xmlChannels = channels;
 
-    // ========== 步骤2：匹配目标频道 ==========
-    let matchedChannel = channels.find(chan => chan.cleanName === targetChannel);
-    // 模糊匹配（备选）
+    // ========== 步骤2：匹配目标频道（优化双向模糊匹配） ==========
+    let matchedChannel = null;
+    // 步骤2.1：精确匹配（原逻辑）
+    matchedChannel = channels.find(chan => chan.cleanName === targetChannel);
+    
+    // 步骤2.2：双向模糊匹配（XML频道名包含用户关键词 OR 用户关键词包含XML频道名）
     if (!matchedChannel) {
-      matchedChannel = channels.find(chan => chan.cleanName.includes(targetChannel));
+      matchedChannel = channels.find(chan => 
+        chan.cleanName.includes(targetChannel) || targetChannel.includes(chan.cleanName)
+      );
+    }
+
+    // 步骤2.3：前缀匹配（针对CHC/CCTV/4K等特征前缀）
+    if (!matchedChannel && targetChannel.length >= 2) {
+      const prefix = targetChannel.slice(0, 3); // 取前3个字符作为前缀
+      matchedChannel = channels.find(chan => chan.cleanName.startsWith(prefix));
     }
 
     if (!matchedChannel) {
@@ -96,9 +114,10 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
     const nextDateObj = new Date(targetDateObj);
     nextDateObj.setDate(nextDateObj.getDate() + 1);
 
-    // 匹配指定 channel id 的 programme 标签
+    // 匹配指定 channel id 的 programme 标签（适配非数字ID，转义特殊字符）
+    const escapedChannelId = matchedChannel.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const programmeRegex = new RegExp(
-      `<programme start="([^"]+)" stop="([^"]+)" channel="${matchedChannel.id}">(.*?)<\/programme>`,
+      `<programme start="([^"]+)" stop="([^"]+)" channel="${escapedChannelId}">(.*?)<\/programme>`,
       "gs"
     );
     let programmeMatch;

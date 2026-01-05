@@ -68,18 +68,25 @@ EPG_CONFIG = {
             "enabled": True
         },
         {
+            "url": "https://gitee.com/taksssss/tv/raw/main/epg/erw.xml.gz",
+            "name": "备用EPG源4-erw",
+            "is_official": False,
+            "clean_name": True,
+            "enabled": True
+        },
+        {
             "url": "https://gitee.com/taksssss/tv/raw/main/epg/51zmt.xml.gz",
-            "name": "备用EPG源4-51zmt",
+            "name": "备用EPG源5-51zmt",
             "is_official": False,
             "clean_name": True,
             "enabled": False
         },
         {
             "url": "https://gitee.com/taksssss/tv/raw/main/epg/epgpw_cn.xml.gz",
-            "name": "备用EPG源5-epgpw_cn",
+            "name": "备用EPG源6-epgpw_cn",
             "is_official": False,
             "clean_name": True,
-            "enabled": True
+            "enabled": False
         }
     ],
     'PLAYLIST_FILE_PATH': "https://raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/playlist-zz.json",

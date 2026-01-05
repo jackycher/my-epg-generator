@@ -2,11 +2,12 @@
  * Cloudflare Pages EPG 转 diyp 格式脚本（无 DOM 依赖）
  * 路径：/functions/diyp_epg.js
  * 访问：https://你的域名/diyp_epg?ch=CHC影迷电影&date=20260105&debug=1
- * 修复点：1. 兼容XML标签闭合/空格 2. 增强display-name提取 3. 完善调试信息
+ * 新增：支持 gzip 压缩包解压，解决 25MiB 大小限制问题
  */
 
 const CONFIG = {
-  EPG_XML_URL: "https://raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml",
+  // 关键修改1：替换为 gz 压缩包地址
+  EPG_XML_URL: "https://raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml.gz",
   CHT_TO_CHS: false,
   RET_DEFAULT: true,
   DEFAULT_URL: "https://github.com/jackycher/my-epg-generator",
@@ -15,21 +16,19 @@ const CONFIG = {
 };
 
 /**
- * 1. 清理频道名（放宽规则：仅移除HTML特殊字符+多余空格，不强制大写）
+ * 1. 清理频道名（统一转大写+移除特殊字符）
  */
 function cleanChannelName(channelName) {
   if (!channelName) return "";
-  // 仅移除HTML特殊字符、多余空格、不可见字符，保留核心特征
   return channelName.trim()
-    .toUpperCase() // 新增：全部转为大写
-    .replace(/[<>&"']/g, "") // 移除HTML特殊字符
-    .replace(/\s+/g, "")    // 移除连续空格
-    .replace(/[\u200B-\u200D\uFEFF]/g, ""); // 移除零宽空格等不可见字符
+    .toUpperCase() 
+    .replace(/[<>&"']/g, "") 
+    .replace(/\s+/g, "")    
+    .replace(/[\u200B-\u200D\uFEFF]/g, ""); 
 }
 
 /**
- * 新增：计算两个字符串的相似度（简化版编辑距离）
- * 用于近似匹配（比如4K纪实专区 → 4K超清）
+ * 新增：计算字符串相似度
  */
 function getStringSimilarity(str1, str2) {
   if (!str1 || !str2) return 0;
@@ -55,7 +54,7 @@ function getFormatDate(dateStr) {
  */
 function parseEpgTime(timeStr) {
   if (!timeStr) return null;
-  const cleanTime = timeStr.split(" ")[0]; // 提取 YYYYMMDDHHMMSS
+  const cleanTime = timeStr.split(" ")[0]; 
   if (cleanTime.length !== 14) return null;
   const year = cleanTime.slice(0,4), month = cleanTime.slice(4,6), day = cleanTime.slice(6,8);
   const hour = cleanTime.slice(8,10), min = cleanTime.slice(10,12);
@@ -63,14 +62,23 @@ function parseEpgTime(timeStr) {
 }
 
 /**
- * 4. 纯正则解析 XML（替代 DOMParser，适配 Cloudflare 环境）
- * 优化：1. 兼容XML标签空格/闭合 2. 增强display-name提取 3. 完善调试信息
+ * 新增：解压 gzip 二进制数据为文本（适配 Cloudflare Workers 环境）
+ */
+async function decompressGzip(buffer) {
+  const stream = new Blob([buffer]).stream();
+  const decompressedStream = stream.pipeThrough(new DecompressionStream('gzip'));
+  const decompressedBlob = await new Response(decompressedStream).blob();
+  return await decompressedBlob.text();
+}
+
+/**
+ * 4. 纯正则解析 XML（逻辑不变）
  */
 function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
   const debugInfo = {
     target: { channel: targetChannel, date: targetDate },
     xmlChannels: [],
-    allChannelNames: [], // 新增：所有频道的cleanName列表（方便排查）
+    allChannelNames: [], 
     matchedChannel: null,
     matchedProgrammes: [],
     error: null,
@@ -78,7 +86,6 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
   };
 
   try {
-    // ========== 步骤1：提取所有频道（channel 标签） ==========
     const channelRegex = /<channel id="([^"]+)">(.*?)<\/channel>/gs;
     let channelMatch;
     const channels = [];
@@ -87,11 +94,9 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
       const channelId = channelMatch[1];
       const channelContent = channelMatch[2];
       
-      // 优化：兼容 display-name 标签的空格、额外属性（lang="zh"、lang="zh-CN"等）
       const zhNameRegex = /<display-name\s+lang="zh(?:-[A-Za-z]+)?"\s*>(.*?)<\/display-name>/is;
       let displayName = zhNameRegex.exec(channelContent)?.[1] || "";
       
-      // 备选：匹配任意 display-name（无lang属性或其他lang）
       if (!displayName) {
         const anyNameRegex = /<display-name\s*>(.*?)<\/display-name>/is;
         displayName = anyNameRegex.exec(channelContent)?.[1] || "";
@@ -102,23 +107,22 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
     }
 
     debugInfo.xmlChannels = channels;
-    debugInfo.allChannelNames = channels.map(chan => chan.cleanName); // 保存所有频道名
+    debugInfo.allChannelNames = channels.map(chan => chan.cleanName);
 
-    // ========== 步骤2：匹配目标频道（优化容错性） ==========
-    const cleanTarget = cleanChannelName(targetChannel); // 二次清理目标值
+    const cleanTarget = cleanChannelName(targetChannel);
     let matchedChannel = null;
 
-    // 步骤2.1：精确匹配（去除不可见字符后）
+    // 精确匹配
     matchedChannel = channels.find(chan => chan.cleanName === cleanTarget);
 
-    // 步骤2.2：双向模糊匹配
+    // 双向模糊匹配
     if (!matchedChannel) {
       matchedChannel = channels.find(chan => 
         chan.cleanName.includes(cleanTarget) || cleanTarget.includes(chan.cleanName)
       );
     }
 
-    // 步骤2.3：相似度匹配
+    // 相似度匹配
     if (!matchedChannel) {
       const channelWithSimilarity = channels.map(chan => ({
         ...chan,
@@ -136,7 +140,7 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
       }
     }
 
-    // 步骤2.4：前缀匹配
+    // 前缀匹配
     if (!matchedChannel && cleanTarget.length >= 2) {
       const prefix = cleanTarget.slice(0, 3);
       matchedChannel = channels.find(chan => chan.cleanName.startsWith(prefix));
@@ -148,12 +152,11 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
     }
     debugInfo.matchedChannel = matchedChannel;
 
-    // ========== 步骤3：提取该频道的所有节目 ==========
+    // 提取节目数据
     const targetDateObj = new Date(targetDate);
     const nextDateObj = new Date(targetDateObj);
     nextDateObj.setDate(nextDateObj.getDate() + 1);
 
-    // 匹配指定 channel id 的 programme 标签（转义特殊字符）
     const escapedChannelId = matchedChannel.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const programmeRegex = new RegExp(
       `<programme start="([^"]+)" stop="([^"]+)" channel="${escapedChannelId}">(.*?)<\/programme>`,
@@ -167,21 +170,18 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
       const stopStr = programmeMatch[2];
       const progContent = programmeMatch[3];
       
-      // 优化：提取 title（兼容lang属性差异）
       const titleRegex = /<title\s+lang="zh(?:-[A-Za-z]+)?"\s*>(.*?)<\/title>/is;
       let title = titleRegex.exec(progContent)?.[1] || "";
       if (!title) {
         title = /<title\s*>(.*?)<\/title>/is.exec(progContent)?.[1] || "";
       }
       
-      // 优化：提取 desc（兼容lang属性差异）
       const descRegex = /<desc\s+lang="zh(?:-[A-Za-z]+)?"\s*>(.*?)<\/desc>/is;
       let desc = descRegex.exec(progContent)?.[1] || "";
       if (!desc) {
         desc = /<desc\s*>(.*?)<\/desc>/is.exec(progContent)?.[1] || "";
       }
 
-      // 解析时间并过滤目标日期
       const start = parseEpgTime(startStr);
       const stop = parseEpgTime(stopStr);
       const isTargetDate = start && start >= targetDateObj && start < nextDateObj;
@@ -229,7 +229,7 @@ function getDefaultEpgData(channelName, date) {
 }
 
 /**
- * 主处理函数（Cloudflare Pages 入口）
+ * 主处理函数（关键修改2：添加 gzip 解压逻辑）
  */
 export async function onRequest(context) {
   try {
@@ -251,23 +251,26 @@ export async function onRequest(context) {
       });
     }
 
-    // 获取 EPG XML（带缓存，强制刷新一次缓存避免旧数据影响）
+    // 获取 gzip 压缩包（带缓存）
     const cache = caches.default;
     let cachedResponse = await cache.match(CONFIG.EPG_XML_URL);
     let xmlStr;
 
-    // 新增：如果是调试模式，跳过缓存（避免旧XML影响排查）
     if (isDebug || !cachedResponse) {
-      const xmlResponse = await fetch(CONFIG.EPG_XML_URL, {
+      const gzipResponse = await fetch(CONFIG.EPG_XML_URL, {
         headers: { "User-Agent": "Cloudflare EPG Fetcher" },
-        cf: { cacheTtl: isDebug ? 60 : 86400 } // 调试模式缓存1分钟，正常模式24小时
+        cf: { cacheTtl: isDebug ? 60 : 86400 } 
       });
 
-      if (!xmlResponse.ok) {
-        throw new Error(`EPG XML 下载失败: ${xmlResponse.status}`);
+      if (!gzipResponse.ok) {
+        throw new Error(`EPG gz 压缩包下载失败: ${gzipResponse.status}`);
       }
 
-      xmlStr = await xmlResponse.text();
+      // 关键修改3：读取二进制数据并解压为 XML 文本
+      const gzipBuffer = await gzipResponse.arrayBuffer();
+      xmlStr = await decompressGzip(gzipBuffer);
+
+      // 缓存解压后的 XML（避免重复解压）
       await cache.put(CONFIG.EPG_XML_URL, new Response(xmlStr, {
         headers: {
           "Cache-Control": `max-age=${isDebug ? 60 : 86400}`,
@@ -275,15 +278,15 @@ export async function onRequest(context) {
         }
       }));
     } else {
+      // 从缓存读取已解压的 XML 文本
       xmlStr = await cachedResponse.text();
     }
 
-    // 解析 XML 提取节目
+    // 原有解析逻辑不变
     const parseResult = parseEpgXml(xmlStr, cleanChannel, targetDate, isDebug);
     let epgData;
 
     if (parseResult.matchedProgrammes.length > 0) {
-      // 有匹配的节目数据
       epgData = {
         channel_name: cleanChannel,
         date: targetDate,
@@ -298,7 +301,6 @@ export async function onRequest(context) {
       };
       if (isDebug) epgData.debug = parseResult;
     } else {
-      // 无匹配数据返回默认值
       epgData = getDefaultEpgData(oriChannelName, targetDate);
       if (isDebug) epgData.debug = parseResult;
     }

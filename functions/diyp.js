@@ -21,6 +21,7 @@ function cleanChannelName(channelName) {
   if (!channelName) return "";
   // 仅移除HTML特殊字符、多余空格、不可见字符，保留核心特征
   return channelName.trim()
+    .toUpperCase() // 新增：全部转为大写
     .replace(/[<>&"']/g, "") // 移除HTML特殊字符
     .replace(/\s+/g, "")    // 移除连续空格
     .replace(/[\u200B-\u200D\uFEFF]/g, ""); // 移除零宽空格等不可见字符

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-独立EPG生成脚本
+独立EPG生成脚本（升级去重逻辑：名称相似+时间重叠）
 可单独运行：python epg_generator.py
 """
 import os
@@ -16,6 +16,7 @@ import traceback
 import hashlib
 import shutil
 import urllib.parse
+
 
 # ===================== EPG配置区 =====================
 EPG_CONFIG = {
@@ -114,6 +115,77 @@ EPG_CONFIG = {
         }
     }
 }
+
+
+# ===================== 新增：去重核心辅助函数 =====================
+def normalize_program_title(title):
+    """标准化节目标题，去除括号、统一数字格式，用于相似性判断"""
+    if not title:
+        return ""
+    # 1. 替换 (数字)、（数字）为纯数字（比如 (1)→1，（2）→2）
+    title = re.sub(r'\((\d+)\)', r'\1', title)  # 英文括号+数字
+    title = re.sub(r'（(\d+)）', r'\1', title)  # 中文括号+数字
+    # 2. 去除所有非核心字符（仅保留中文、字母、数字）
+    title = re.sub(r'[^\u4e00-\u9fa5a-zA-Z0-9]', '', title)
+    # 3. 去除多余空格（防止残留）
+    title = re.sub(r'\s+', '', title)
+    return title.strip()
+
+def parse_time_str(time_str):
+    """解析EPG时间字符串为datetime对象（格式：YYYYMMDDHHMMSS +0800）"""
+    if not time_str or ' ' not in time_str:
+        return None
+    try:
+        time_part = time_str.split(' ')[0]  # 提取时间部分（去掉时区）
+        return datetime.datetime.strptime(time_part, "%Y%m%d%H%M%S")
+    except Exception:
+        return None
+
+def is_time_overlap(start1, stop1, start2, stop2):
+    """判断两个时间段是否重叠"""
+    # 解析时间
+    s1 = parse_time_str(start1)
+    e1 = parse_time_str(stop1)
+    s2 = parse_time_str(start2)
+    e2 = parse_time_str(stop2)
+    
+    # 有任意时间解析失败，默认不重叠（避免误判）
+    if not all([s1, e1, s2, e2]):
+        return False
+    
+    # 核心重叠判断逻辑：s1 < e2 且 s2 < e1
+    return s1 < e2 and s2 < e1
+
+def is_duplicate_program(channel, start, stop, title, existing_programs):
+    """
+    判断当前节目是否与已有节目重复（核心去重逻辑）
+    判定条件（同时满足）：
+    1. 同一频道
+    2. 名称标准化后相同
+    3. 时间段存在重叠
+    """
+    # 标准化当前节目名称
+    norm_title = normalize_program_title(title)
+    if not norm_title:  # 空名称不判断重复
+        return False
+    
+    # 遍历已有节目，检查重复
+    for prog in existing_programs:
+        # 条件1：同一频道
+        if prog["channel"] != channel:
+            continue
+        
+        # 条件2：名称标准化后相同
+        prog_norm_title = normalize_program_title(prog["title"])
+        if prog_norm_title != norm_title:
+            continue
+        
+        # 条件3：时间重叠
+        if is_time_overlap(start, stop, prog["start"], prog["stop"]):
+            return True
+    
+    return False
+
 
 # ===================== 工具函数 =====================
 def write_log(content, section="INFO"):
@@ -676,7 +748,7 @@ def epg_main():
         print(f"[3/7] 官方EPG处理：{len(programme_list)} 条节目，{official_fail_count} 个需匹配外部源")
         write_log(f"官方EPG完成 - 节目{len(programme_list)}条，需外部匹配{official_fail_count}个", "STEP3")
 
-        # 步骤4：多EPG源匹配（终极修正版）
+        # 步骤4：多EPG源匹配（终极修正版 + 高级去重）
         write_log("开始多EPG源匹配", "STEP4")
         temp_local_num_prefix = "unm_"
         temp_num_counter = 1
@@ -727,7 +799,7 @@ def epg_main():
                     matched_local_nums = [v['local_num'] for v in matched_channels.values()]
                     existing_ids = set(matched_local_nums) | set([c['local_num'] for c in unmatched_bjcul_channels if c['local_num']])
                     existing_ids.update(all_external_channels.keys())
-        
+            
                     # 合并频道（按id去重+ID重映射）
                     for cid, channel_info in full_channel_info.items():
                         # 如果原ID已存在，生成新ID
@@ -760,13 +832,7 @@ def epg_main():
                         })
                 
 
-                # ===== 终极修正：多源补充逻辑 =====
-                # 初始化节目去重键（包含所有已添加的节目）
-                prog_duplicate_key = set()
-                for prog in programme_list:
-                    if prog.get("channel") and prog.get("start"):
-                        prog_duplicate_key.add((prog["channel"], prog["start"]))
-
+                # ===== 终极修正：多源补充逻辑 + 高级去重 =====
                 matched_in_this_source = 0
                 next_pending_channels = []  # 下一个源的待匹配列表
                 
@@ -810,17 +876,18 @@ def epg_main():
                             ext_progs = epg_map[local_num]
                             new_prog_count = 0  # 新增节目数（去重后）
                             for prog in ext_progs:
-                                # 生成去重键：频道+开始时间（核心去重逻辑）
-                                key = (local_num, prog["start"])
-                                if key not in prog_duplicate_key:
-                                    programme_list.append({
-                                        "channel": local_num,
-                                        "start": prog["start"],
-                                        "stop": prog["stop"],
-                                        "title": prog["title"]
-                                    })
-                                    prog_duplicate_key.add(key)
-                                    new_prog_count += 1
+                                # 核心升级：调用高级去重函数判断是否重复
+                                if is_duplicate_program(local_num, prog["start"], prog["stop"], prog["title"], programme_list):
+                                    continue  # 重复则跳过添加
+                                
+                                # 无重复，添加节目
+                                programme_list.append({
+                                    "channel": local_num,
+                                    "start": prog["start"],
+                                    "stop": prog["stop"],
+                                    "title": prog["title"]
+                                })
+                                new_prog_count += 1
                             if new_prog_count > 0:
                                 matched_in_this_source += 1
                                 total_matched_by_external += 1
@@ -844,17 +911,18 @@ def epg_main():
                                 
                                 new_prog_count = 0  # 新增节目数（去重后）
                                 for prog in ext_progs:
-                                    # 生成去重键：频道+开始时间（核心去重逻辑）
-                                    key = (local_num, prog["start"])
-                                    if key not in prog_duplicate_key:
-                                        programme_list.append({
-                                            "channel": local_num,
-                                            "start": prog["start"],
-                                            "stop": prog["stop"],
-                                            "title": prog["title"]
-                                        })
-                                        prog_duplicate_key.add(key)
-                                        new_prog_count += 1
+                                    # 核心升级：调用高级去重函数判断是否重复
+                                    if is_duplicate_program(local_num, prog["start"], prog["stop"], prog["title"], programme_list):
+                                        continue  # 重复则跳过添加
+                                    
+                                    # 无重复，添加节目
+                                    programme_list.append({
+                                        "channel": local_num,
+                                        "start": prog["start"],
+                                        "stop": prog["stop"],
+                                        "title": prog["title"]
+                                    })
+                                    new_prog_count += 1
                                 if new_prog_count > 0:
                                     matched_in_this_source += 1
                                     total_matched_by_external += 1
@@ -927,7 +995,7 @@ def epg_main():
         for prog in sorted_progs_lite:
             if not prog.get("channel") or not prog.get("start") or not prog.get("title"):
                 continue
-            # 去重键：频道+开始时间+标题
+            # 去重键：频道+开始时间+标题（兜底去重）
             key = (prog["channel"], prog["start"], prog["title"])
             if key in seen_progs_lite:
                 continue
@@ -1081,6 +1149,6 @@ def epg_main():
 if __name__ == "__main__":
     # 单独运行此脚本时，直接执行EPG生成
     print("="*60)
-    print("独立运行EPG生成脚本")
+    print("独立运行EPG生成脚本（升级去重逻辑：名称相似+时间重叠）")
     print("="*60)
     epg_main()

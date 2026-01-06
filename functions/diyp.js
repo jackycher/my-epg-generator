@@ -6,7 +6,7 @@
  */
 
 const CONFIG = {
-  EPG_XML_URL: "https://raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml",
+  EPG_XML_URL: "https://raw.githubusercontent.com/jackycher/my-epg-generator/main/epg_full.xml",
   CHT_TO_CHS: false,
   RET_DEFAULT: true,
   DEFAULT_URL: "https://github.com/jackycher/my-epg-generator",

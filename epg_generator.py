@@ -55,6 +55,41 @@ EPG_CONFIG = {
             "is_official": False,
             "clean_name": True,
             "enabled": True
+        },
+        {
+            "url": "https://epg.zsdc.eu.org/t.xml.gz",
+            "name": "备用EPG源1-zsdc",
+            "is_official": False,
+            "clean_name": True,
+            "enabled": False
+        },
+        {
+            "url": "https://raw.githubusercontent.com/kuke31/xmlgz/main/all.xml.gz",
+            "name": "备用EPG源2-e.erw.cc",
+            "is_official": False,
+            "clean_name": True,
+            "enabled": False
+        },
+        {
+            "url": "https://gitee.com/taksssss/tv/raw/main/epg/112114.xml.gz",
+            "name": "备用EPG源3-112114",
+            "is_official": False,
+            "clean_name": True,
+            "enabled": False
+        },
+        {
+            "url": "https://gitee.com/taksssss/tv/raw/main/epg/51zmt.xml.gz",
+            "name": "备用EPG源5-51zmt",
+            "is_official": False,
+            "clean_name": True,
+            "enabled": False
+        },
+        {
+            "url": "https://gitee.com/taksssss/tv/raw/main/epg/epgpw_cn.xml.gz",
+            "name": "备用EPG源6-epgpw_cn",
+            "is_official": False,
+            "clean_name": True,
+            "enabled": False
         }
     ],
     'PLAYLIST_FILE_PATH': "https://raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/playlist-zz.json",

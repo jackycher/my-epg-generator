@@ -713,12 +713,13 @@ def epg_main():
                         existing_ids.add(use_id)
 
                     
-                    # 合并节目（使用新ID）
+                    # 合并节目（使用新ID，并且统一键名为channel）
                     for prog in full_program_info:
                         original_cid = prog["channel_id"]
                         use_cid = ext_id_mapping.get(original_cid, original_cid)
+                        # 关键修复：将channel_id改为channel，统一键名
                         all_external_programs.append({
-                            "channel_id": use_cid,
+                            "channel": use_cid,  # 替换channel_id为channel
                             "start": prog["start"],
                             "stop": prog["stop"],
                             "title": prog["title"]
@@ -858,6 +859,9 @@ def epg_main():
         compress_xml_to_gz(config['EPG_SAVE_PATH'], config['EPG_GZ_PATH'])
 
         # ===== 生成完整版XML（包含外部所有频道）=====
+        other_channel_add_count = 0  # 初始化变量，避免未定义
+        prog_add_count_full = 0
+        non_unknown_count_full = 0
         if config['ENABLE_KEEP_OTHER_CHANNELS'] and all_external_channels:
             write_log("开始生成完整版EPG XML", "STEP5_FULL")
             # 复制精简版的根节点
@@ -893,9 +897,19 @@ def epg_main():
             all_programs_full.extend(programme_list)
             all_programs_full.extend(all_external_programs)
             
-            # 第四步：添加节目（去重）
+            # 第四步：添加节目（去重，增加数据校验）
             seen_progs_full = set()
-            sorted_progs_full = sorted(all_programs_full, key=lambda x: (x["channel"], x["start"]))
+            # 修复：排序前过滤无效数据，避免KeyError
+            valid_progs_full = []
+            for prog in all_programs_full:
+                # 校验必要字段是否存在
+                if isinstance(prog, dict) and "channel" in prog and "start" in prog and "title" in prog:
+                    valid_progs_full.append(prog)
+                else:
+                    write_log(f"过滤无效节目数据：{prog}", "STEP5_FULL_WARN")
+            
+            # 对有效数据排序
+            sorted_progs_full = sorted(valid_progs_full, key=lambda x: (x["channel"], x["start"]))
             prog_add_count_full = 0
             non_unknown_count_full = 0
             

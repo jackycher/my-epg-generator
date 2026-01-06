@@ -27,9 +27,9 @@ EPG_CONFIG = {
     'EPG_SERVER_URL': "http://210.13.21.3",
     'BJcul_PATH': "./bjcul.txt",
     # 不需要参与多源匹配的频道名称列表（完全匹配）
-    'EXCLUDE_MATCH_CHANNELS': [],
-    # 新增：不需要参与多源匹配的频道分类列表（匹配分类行）
-    'EXCLUDE_MATCH_CATEGORIES': ["TS频道", "体验频道"],
+    'EXCLUDE_MATCH_CHANNELS': [""],
+    # 不需要参与外部多源补充的频道分类列表（匹配分类行）
+    'EXCLUDE_EXTERNAL_CATEGORIES': ["TS频道", "体验频道"],
     'EPG_SAVE_PATH': "./epg.xml",          # 精简版XML
     'EPG_GZ_PATH': "./epg.xml.gz",        # 精简版GZ
     'EPG_FULL_SAVE_PATH': "./epg_full.xml",  # 完整版XML
@@ -599,6 +599,8 @@ def epg_main():
         write_log("开始处理官方EPG", "STEP3")
         programme_list = []
         official_fail_count = 0
+        # 新增：记录哪些频道已从官方源获取到节目
+        channel_has_official_prog = set()
         
         if config['ENABLE_OFFICIAL_EPG']:
             datetime_now = datetime.datetime.now()
@@ -638,6 +640,8 @@ def epg_main():
                             })
                             channel_prog_count += 1
                         download_fail = False
+                        # 标记该频道已获取官方节目
+                        channel_has_official_prog.add(local_num)
                     except Exception as e:
                         write_log(f"解析{raw_name}({channel_code})失败：{str(e)}", "STEP3_ERROR")
                         continue
@@ -678,6 +682,8 @@ def epg_main():
         temp_num_counter = 1
         total_matched_by_external = 0
         pending_channels = unmatched_bjcul_channels
+        # 新增：记录哪些频道已从外部源获取到节目（避免重复补充）
+        channel_has_external_prog = set()
         
         if not config['ENABLE_EXTERNAL_EPG']:
             write_log("外部EPG总开关关闭，跳过所有外部源匹配", "STEP4_SKIP_ALL")
@@ -715,11 +721,10 @@ def epg_main():
                 # 新增：收集外部源的所有频道和节目（去重+ID重映射）
                 if config['ENABLE_KEEP_OTHER_CHANNELS']:
                     # 先收集已存在的频道ID（避免重复）
-                    # 修复：只提取matched_channels中的local_num，而非整个字典
                     matched_local_nums = [v['local_num'] for v in matched_channels.values()]
                     existing_ids = set(matched_local_nums) | set([c['local_num'] for c in unmatched_bjcul_channels if c['local_num']])
                     existing_ids.update(all_external_channels.keys())
-    
+        
                     # 合并频道（按id去重+ID重映射）
                     for cid, channel_info in full_channel_info.items():
                         # 如果原ID已存在，生成新ID
@@ -730,7 +735,7 @@ def epg_main():
                             use_id = ext_id_mapping[cid]
                         else:
                             use_id = cid
-        
+            
                         if use_id not in all_external_channels:
                             all_external_channels[use_id] = {
                                 "original_id": cid,
@@ -744,16 +749,15 @@ def epg_main():
                     for prog in full_program_info:
                         original_cid = prog["channel_id"]
                         use_cid = ext_id_mapping.get(original_cid, original_cid)
-                        # 关键修复：将channel_id改为channel，统一键名
                         all_external_programs.append({
-                            "channel": use_cid,  # 替换channel_id为channel
+                            "channel": use_cid,
                             "start": prog["start"],
                             "stop": prog["stop"],
                             "title": prog["title"]
                         })
                 
 
-                # 原有匹配逻辑（修改：保留频道供后续源补充节目 + 跳过排除的频道）
+                # ===== 核心修改：重构外部源匹配逻辑 =====
                 prog_duplicate_key = set()
                 # 先初始化已有的节目去重键（频道+开始时间）
                 for prog in programme_list:
@@ -761,17 +765,31 @@ def epg_main():
                         prog_duplicate_key.add((prog["channel"], prog["start"]))
 
                 matched_in_this_source = 0
-                new_pending_channels = []  # 保留所有频道，让后续源继续补充
+                new_pending_channels = []  # 待匹配列表（仅保留未匹配成功的非排除频道）
+                
                 for channel in pending_channels:
                     clean_name_local = channel["clean_name"]
                     raw_name = channel["raw_name"]
                     local_num = channel["local_num"]
+                    channel_category = channel.get("category", "")
                     channel_matched = False  # 标记当前频道是否在本源性匹配到节目
                     
-                    # 新增：判断当前频道是否在排除列表（频道名 或 分类），若是则跳过匹配
-                    if (raw_name in config['EXCLUDE_MATCH_CHANNELS']) or (channel.get("category") in config['EXCLUDE_MATCH_CATEGORIES']):
+                    # 【核心排除逻辑】
+                    # 1. 频道名/分类在排除列表 → 跳过外部源匹配
+                    # 2. 已从官方源获取节目 → 跳过外部源匹配
+                    # 3. 已从其他外部源获取节目 → 跳过外部源匹配
+                    is_excluded = (
+                        raw_name in config['EXCLUDE_MATCH_CHANNELS'] 
+                        or channel_category in config['EXCLUDE_EXTERNAL_CATEGORIES']
+                    )
+                    has_prog = (local_num in channel_has_official_prog) or (local_num in channel_has_external_prog)
+                    
+                    if is_excluded or has_prog:
                         new_pending_channels.append(channel)
-                        write_log(f"{raw_name}（分类：{channel.get('category')}）在排除匹配列表中，跳过本源性的多源匹配", "STEP4_EXCLUDE")
+                        if is_excluded:
+                            write_log(f"{raw_name}（分类：{channel_category}）在排除列表，跳过外部源补充", "STEP4_EXCLUDE")
+                        elif has_prog:
+                            write_log(f"{raw_name}已获取节目（官方/外部），跳过外部源补充", "STEP4_SKIP")
                         continue
                     
                     # 官方源：ID匹配
@@ -795,6 +813,7 @@ def epg_main():
                             if new_prog_count > 0:
                                 matched_in_this_source += 1
                                 total_matched_by_external += 1
+                                channel_has_external_prog.add(local_num)  # 标记已获取外部节目
                                 write_log(f"{raw_name}({local_num})从{source_name}补充{new_prog_count}条节目（总计{len(ext_progs)}条）", "STEP4_MATCH_SUCCESS")
                             channel_matched = True
                     else:
@@ -824,13 +843,15 @@ def epg_main():
                                 if new_prog_count > 0:
                                     matched_in_this_source += 1
                                     total_matched_by_external += 1
+                                    channel_has_external_prog.add(local_num)  # 标记已获取外部节目
                                     write_log(f"{raw_name}({local_num})从{source_name}补充{new_prog_count}条节目（总计{len(ext_progs)}条）", "STEP4_MATCH_SUCCESS")
                                 channel_matched = True
                     
-                    # 关键修改：无论是否匹配成功，都保留频道到待匹配列表
-                    new_pending_channels.append(channel)
+                    # 仅将未匹配成功的频道保留到下一个源的待匹配列表
+                    if not channel_matched:
+                        new_pending_channels.append(channel)
 
-                pending_channels = new_pending_channels  # 所有频道都保留，供后续源补充
+                pending_channels = new_pending_channels  # 更新待匹配列表
                 write_log(f"{source_name}匹配完成 - 补充{matched_in_this_source}个频道的节目，剩余{len(pending_channels)}个待补充", "STEP4_SOURCE_SUMMARY")
                 print(f"  → 源{source_idx+1}补充{matched_in_this_source}个频道的节目，剩余{len(pending_channels)}个待补充")
 
@@ -909,7 +930,7 @@ def epg_main():
         compress_xml_to_gz(config['EPG_SAVE_PATH'], config['EPG_GZ_PATH'])
 
         # ===== 生成完整版XML（包含外部所有频道）=====
-        other_channel_add_count = 0  # 初始化变量，避免未定义
+        other_channel_add_count = 0
         prog_add_count_full = 0
         non_unknown_count_full = 0
         if config['ENABLE_KEEP_OTHER_CHANNELS'] and all_external_channels:
@@ -949,19 +970,14 @@ def epg_main():
             
             # 第四步：添加节目（去重，增加数据校验）
             seen_progs_full = set()
-            # 修复：排序前过滤无效数据，避免KeyError
+            # 过滤无效数据，避免KeyError
             valid_progs_full = []
             for prog in all_programs_full:
-                # 校验必要字段是否存在
                 if isinstance(prog, dict) and "channel" in prog and "start" in prog and "title" in prog:
                     valid_progs_full.append(prog)
-                else:
-                    write_log(f"过滤无效节目数据：{prog}", "STEP5_FULL_WARN")
             
             # 对有效数据排序
             sorted_progs_full = sorted(valid_progs_full, key=lambda x: (x["channel"], x["start"]))
-            prog_add_count_full = 0
-            non_unknown_count_full = 0
             
             for prog in sorted_progs_full:
                 if not prog.get("channel") or not prog.get("start") or not prog.get("title"):

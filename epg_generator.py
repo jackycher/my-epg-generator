@@ -27,7 +27,7 @@ EPG_CONFIG = {
     'EPG_SERVER_URL': "http://210.13.21.3",
     'BJcul_PATH': "./bjcul.txt",
     # 不需要参与多源匹配的频道名称列表（完全匹配）
-    'EXCLUDE_MATCH_CHANNELS': ["体验频道", "TS频道"],
+    'EXCLUDE_MATCH_CHANNELS': [],
     # 新增：不需要参与多源匹配的频道分类列表（匹配分类行）
     'EXCLUDE_MATCH_CATEGORIES': ["TS频道", "体验频道"],
     'EPG_SAVE_PATH': "./epg.xml",          # 精简版XML

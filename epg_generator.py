@@ -26,8 +26,10 @@ EPG_CONFIG = {
     'ENABLE_KEEP_OTHER_CHANNELS': True,
     'EPG_SERVER_URL': "http://210.13.21.3",
     'BJcul_PATH': "./bjcul.txt",
-    # 新增：不需要参与多源匹配的频道名称列表（完全匹配）
+    # 不需要参与多源匹配的频道名称列表（完全匹配）
     'EXCLUDE_MATCH_CHANNELS': ["体验频道", "TS频道"],
+    # 新增：不需要参与多源匹配的频道分类列表（匹配分类行）
+    'EXCLUDE_MATCH_CATEGORIES': ["TS频道", "体验频道"],
     'EPG_SAVE_PATH': "./epg.xml",          # 精简版XML
     'EPG_GZ_PATH': "./epg.xml.gz",        # 精简版GZ
     'EPG_FULL_SAVE_PATH': "./epg_full.xml",  # 完整版XML
@@ -488,6 +490,7 @@ def epg_main():
         write_log("开始读取bjcul.txt", "STEP1")
         bjcul_channel_map = {}
         all_bjcul_rtp_urls = []
+        current_category = ""  # 新增：记录当前频道所属分类
         
         bjcul_local_path = get_local_path(config['BJcul_PATH'])
         valid_line_count = 0
@@ -495,7 +498,19 @@ def epg_main():
         with open(bjcul_local_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
-                if not line or line.startswith('#') or "#genre#" in line or ',' not in line:
+                if not line or line.startswith('#'):
+                    filtered_line_count += 1
+                    continue
+                
+                # 新增：识别分类行（包含#genre#的行）
+                if "#genre#" in line:
+                    # 提取分类名（比如 "CCTV频道,#genre#" → "CCTV频道"）
+                    current_category = line.replace("#genre#", "").strip().rstrip(',').strip()
+                    write_log(f"识别到分类：{current_category}", "STEP1_CATEGORY")
+                    filtered_line_count += 1
+                    continue
+                
+                if ',' not in line:
                     filtered_line_count += 1
                     continue
                 
@@ -503,7 +518,12 @@ def epg_main():
                 raw_name = raw_name.strip()
                 rtp_url = rtp_url.strip()
                 clean_name = clean_channel_name(raw_name)
-                bjcul_channel_map[rtp_url] = {"raw_name": raw_name, "clean_name": clean_name}
+                # 新增：记录频道所属分类
+                bjcul_channel_map[rtp_url] = {
+                    "raw_name": raw_name,
+                    "clean_name": clean_name,
+                    "category": current_category  # 新增：分类信息
+                }
                 all_bjcul_rtp_urls.append(rtp_url)
                 valid_line_count += 1
         
@@ -550,6 +570,7 @@ def epg_main():
                 matched_channels[channel_id] = {
                     "raw_name": bjcul_info["raw_name"],
                     "clean_name": bjcul_info["clean_name"],
+                    "category": bjcul_info["category"],  # 新增：传递分类信息
                     "local_num": str(user_channel_id),
                     "rtp_url": rtp_url,
                     "channel_name": channel_name
@@ -560,10 +581,12 @@ def epg_main():
         matched_rtp_urls = [v['rtp_url'] for v in matched_channels.values()]
         for rtp_url in all_bjcul_rtp_urls:
             if rtp_url not in matched_rtp_urls and rtp_url in bjcul_channel_map:
+                bjcul_info = bjcul_channel_map[rtp_url]
                 unmatched_bjcul_channels.append({
                     "type": "unmatched_id",
-                    "raw_name": bjcul_channel_map[rtp_url]["raw_name"],
-                    "clean_name": bjcul_channel_map[rtp_url]["clean_name"],
+                    "raw_name": bjcul_info["raw_name"],
+                    "clean_name": bjcul_info["clean_name"],
+                    "category": bjcul_info["category"],  # 新增：传递分类信息
                     "rtp_url": rtp_url,
                     "local_num": None
                 })
@@ -624,6 +647,7 @@ def epg_main():
                         "type": "official_fail",
                         "raw_name": raw_name,
                         "clean_name": channel_info["clean_name"],
+                        "category": channel_info["category"],  # 新增：传递分类信息
                         "rtp_url": channel_info["rtp_url"],
                         "local_num": local_num
                     })
@@ -638,6 +662,7 @@ def epg_main():
                     "type": "official_skip",
                     "raw_name": channel_info["raw_name"],
                     "clean_name": channel_info["clean_name"],
+                    "category": channel_info["category"],  # 新增：传递分类信息
                     "rtp_url": channel_info["rtp_url"],
                     "local_num": channel_info["local_num"]
                 })
@@ -743,10 +768,10 @@ def epg_main():
                     local_num = channel["local_num"]
                     channel_matched = False  # 标记当前频道是否在本源性匹配到节目
                     
-                    # 新增：判断当前频道是否在排除列表中，若是则跳过匹配
-                    if raw_name in config['EXCLUDE_MATCH_CHANNELS']:
+                    # 新增：判断当前频道是否在排除列表（频道名 或 分类），若是则跳过匹配
+                    if (raw_name in config['EXCLUDE_MATCH_CHANNELS']) or (channel.get("category") in config['EXCLUDE_MATCH_CATEGORIES']):
                         new_pending_channels.append(channel)
-                        write_log(f"{raw_name}在排除匹配列表中，跳过本源性的多源匹配", "STEP4_EXCLUDE")
+                        write_log(f"{raw_name}（分类：{channel.get('category')}）在排除匹配列表中，跳过本源性的多源匹配", "STEP4_EXCLUDE")
                         continue
                     
                     # 官方源：ID匹配

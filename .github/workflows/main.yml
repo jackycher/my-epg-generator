@@ -63,7 +63,7 @@ jobs:
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          git add playlist.m3u epg.xml epg.xml.gz
+          git add playlist.m3u epg.xml epg.xml.gz epg_full.xml epg_full.xml.gz
           git commit -m "Update PLAYLIST-EPG files - $(date +'%Y-%m-%d %H:%M:%S')"
           git push
         if: success()

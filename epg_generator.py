@@ -676,14 +676,17 @@ def epg_main():
         print(f"[3/7] 官方EPG处理：{len(programme_list)} 条节目，{official_fail_count} 个需匹配外部源")
         write_log(f"官方EPG完成 - 节目{len(programme_list)}条，需外部匹配{official_fail_count}个", "STEP3")
 
-        # 步骤4：多EPG源匹配
+        # 步骤4：多EPG源匹配（终极修正版）
         write_log("开始多EPG源匹配", "STEP4")
         temp_local_num_prefix = "unm_"
         temp_num_counter = 1
         total_matched_by_external = 0
         pending_channels = unmatched_bjcul_channels.copy()
-        # 新增：记录哪些频道已从外部源获取到节目（避免重复补充）
-        channel_has_external_prog = set()
+        
+        # 核心修正：拆分外部节目状态标记
+        channel_has_official_prog = set()  # 已获取官方节目（所有频道都跳过外部源）
+        channel_has_external_single = set()  # 排除列表频道（单源）- 已获取外部节目，跳过后续源
+        channel_has_external_multi = set()   # 非排除列表频道（多源）- 已获取外部节目，仍允许后续源补充
         
         if not config['ENABLE_EXTERNAL_EPG']:
             write_log("外部EPG总开关关闭，跳过所有外部源匹配", "STEP4_SKIP_ALL")
@@ -757,9 +760,9 @@ def epg_main():
                         })
                 
 
-                # ===== 核心修改：排除频道单源匹配，非排除频道多源补充 =====
+                # ===== 终极修正：多源补充逻辑 =====
+                # 初始化节目去重键（包含所有已添加的节目）
                 prog_duplicate_key = set()
-                # 先初始化已有的节目去重键（频道+开始时间）
                 for prog in programme_list:
                     if prog.get("channel") and prog.get("start"):
                         prog_duplicate_key.add((prog["channel"], prog["start"]))
@@ -774,14 +777,28 @@ def epg_main():
                     channel_category = channel.get("category", "")
                     channel_matched = False  # 标记当前频道是否在本源性匹配到节目
                     
-                    # 检查是否已获取节目（官方/外部）- 已获取则跳过
-                    has_prog = (local_num in channel_has_official_prog) or (local_num in channel_has_external_prog)
-                    if has_prog:
-                        write_log(f"{raw_name}已获取节目（官方/外部），跳过当前源补充", "STEP4_SKIP")
+                    # 判断是否需要跳过当前源：
+                    # 1. 已获取官方节目 → 所有频道都跳过
+                    # 2. 排除列表频道且已获取外部节目 → 跳过
+                    skip_current_source = False
+                    if local_num in channel_has_official_prog:
+                        write_log(f"{raw_name}已获取官方节目，跳过当前源补充", "STEP4_SKIP_OFFICIAL")
+                        skip_current_source = True
+                    elif (
+                        (raw_name in config['EXCLUDE_MULTI_SOURCE_CHANNELS'] or channel_category in config['EXCLUDE_MULTI_SOURCE_CATEGORIES'])
+                        and local_num in channel_has_external_single
+                    ):
+                        write_log(f"{raw_name}（分类：{channel_category}）为排除多源频道且已获取外部节目，跳过当前源补充", "STEP4_SKIP_SINGLE")
+                        skip_current_source = True
+                    
+                    if skip_current_source:
+                        # 排除列表频道：已获取节目，不再进入下一个源
+                        if not (raw_name in config['EXCLUDE_MULTI_SOURCE_CHANNELS'] or channel_category in config['EXCLUDE_MULTI_SOURCE_CATEGORIES']):
+                            next_pending_channels.append(channel)
                         continue
                     
                     # 判断是否为排除多源补充的频道
-                    is_exclude_multi_source = (
+                    is_exclude_multi = (
                         raw_name in config['EXCLUDE_MULTI_SOURCE_CHANNELS'] 
                         or channel_category in config['EXCLUDE_MULTI_SOURCE_CATEGORIES']
                     )
@@ -807,7 +824,11 @@ def epg_main():
                             if new_prog_count > 0:
                                 matched_in_this_source += 1
                                 total_matched_by_external += 1
-                                channel_has_external_prog.add(local_num)  # 标记已获取外部节目
+                                # 根据频道类型标记状态
+                                if is_exclude_multi:
+                                    channel_has_external_single.add(local_num)
+                                else:
+                                    channel_has_external_multi.add(local_num)
                                 write_log(f"{raw_name}({local_num})从{source_name}补充{new_prog_count}条节目（总计{len(ext_progs)}条）", "STEP4_MATCH_SUCCESS")
                                 channel_matched = True
                     else:
@@ -837,22 +858,27 @@ def epg_main():
                                 if new_prog_count > 0:
                                     matched_in_this_source += 1
                                     total_matched_by_external += 1
-                                    channel_has_external_prog.add(local_num)  # 标记已获取外部节目
+                                    # 根据频道类型标记状态
+                                    if is_exclude_multi:
+                                        channel_has_external_single.add(local_num)
+                                    else:
+                                        channel_has_external_multi.add(local_num)
                                     write_log(f"{raw_name}({local_num})从{source_name}补充{new_prog_count}条节目（总计{len(ext_progs)}条）", "STEP4_MATCH_SUCCESS")
                                     channel_matched = True
                     
                     # 待匹配列表维护逻辑：
-                    # 1. 排除多源补充的频道：匹配成功则不再进入下一个源，未匹配成功则继续
-                    # 2. 非排除频道：无论是否匹配成功，都进入下一个源（多源补充）
-                    if not channel_matched:
+                    # 1. 排除列表频道：
+                    #    - 匹配成功 → 不再进入下一个源
+                    #    - 未匹配成功 → 继续进入下一个源
+                    # 2. 非排除列表频道：
+                    #    - 无论是否匹配成功 → 都进入下一个源（多源补充）
+                    if not is_exclude_multi:
                         next_pending_channels.append(channel)
                     else:
-                        if not is_exclude_multi_source:
-                            # 非排除频道：匹配成功仍保留到下一个源（多源补充）
+                        if not channel_matched:
                             next_pending_channels.append(channel)
                         else:
-                            # 排除频道：匹配成功则从待匹配列表移除（单源匹配）
-                            write_log(f"{raw_name}（分类：{channel_category}）为排除多源补充频道，匹配成功后不再参与后续源", "STEP4_EXCLUDE_MULTI")
+                            write_log(f"{raw_name}（分类：{channel_category}）为排除多源频道，匹配成功后不再参与后续源", "STEP4_EXCLUDE_MULTI")
 
                 pending_channels = next_pending_channels  # 更新待匹配列表
                 write_log(f"{source_name}匹配完成 - 补充{matched_in_this_source}个频道的节目，剩余{len(pending_channels)}个待补充", "STEP4_SOURCE_SUMMARY")

@@ -26,6 +26,8 @@ EPG_CONFIG = {
     'ENABLE_KEEP_OTHER_CHANNELS': True,
     'EPG_SERVER_URL': "http://210.13.21.3",
     'BJcul_PATH': "./bjcul.txt",
+    # 新增：不需要参与多源匹配的频道名称列表（完全匹配）
+    'EXCLUDE_MATCH_CHANNELS': ["体验频道", "TS频道"],
     'EPG_SAVE_PATH': "./epg.xml",          # 精简版XML
     'EPG_GZ_PATH': "./epg.xml.gz",        # 精简版GZ
     'EPG_FULL_SAVE_PATH': "./epg_full.xml",  # 完整版XML
@@ -725,7 +727,8 @@ def epg_main():
                             "title": prog["title"]
                         })
                 
-                # 原有匹配逻辑（修改：保留频道供后续源补充节目）
+
+                # 原有匹配逻辑（修改：保留频道供后续源补充节目 + 跳过排除的频道）
                 prog_duplicate_key = set()
                 # 先初始化已有的节目去重键（频道+开始时间）
                 for prog in programme_list:
@@ -739,6 +742,12 @@ def epg_main():
                     raw_name = channel["raw_name"]
                     local_num = channel["local_num"]
                     channel_matched = False  # 标记当前频道是否在本源性匹配到节目
+                    
+                    # 新增：判断当前频道是否在排除列表中，若是则跳过匹配
+                    if raw_name in config['EXCLUDE_MATCH_CHANNELS']:
+                        new_pending_channels.append(channel)
+                        write_log(f"{raw_name}在排除匹配列表中，跳过本源性的多源匹配", "STEP4_EXCLUDE")
+                        continue
                     
                     # 官方源：ID匹配
                     if is_official and local_num and not local_num.startswith(temp_local_num_prefix):

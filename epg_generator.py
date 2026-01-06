@@ -725,65 +725,81 @@ def epg_main():
                             "title": prog["title"]
                         })
                 
-                # 原有匹配逻辑
+                # 原有匹配逻辑（修改：保留频道供后续源补充节目）
+                prog_duplicate_key = set()
+                # 先初始化已有的节目去重键（频道+开始时间）
+                for prog in programme_list:
+                    if prog.get("channel") and prog.get("start"):
+                        prog_duplicate_key.add((prog["channel"], prog["start"]))
+
                 matched_in_this_source = 0
-                new_pending_channels = []
+                new_pending_channels = []  # 保留所有频道，让后续源继续补充
                 for channel in pending_channels:
                     clean_name_local = channel["clean_name"]
                     raw_name = channel["raw_name"]
                     local_num = channel["local_num"]
+                    channel_matched = False  # 标记当前频道是否在本源性匹配到节目
                     
                     # 官方源：ID匹配
                     if is_official and local_num and not local_num.startswith(temp_local_num_prefix):
                         if local_num in epg_identifiers and epg_map.get(local_num):
                             ext_channel_name = id_to_name_map.get(local_num, f"ID_{local_num}")
                             ext_progs = epg_map[local_num]
+                            new_prog_count = 0  # 新增节目数（去重后）
                             for prog in ext_progs:
-                                programme_list.append({
-                                    "channel": local_num,
-                                    "start": prog["start"],
-                                    "stop": prog["stop"],
-                                    "title": prog["title"]
-                                })
-                            matched_in_this_source += 1
-                            total_matched_by_external += 1
-                            write_log(f"{raw_name}({local_num})匹配到{source_name}（{ext_channel_name}），新增{len(ext_progs)}条", "STEP4_MATCH_SUCCESS")
-                            continue
-                        else:
-                            new_pending_channels.append(channel)
-                            continue
+                                # 生成去重键：频道+开始时间（核心去重逻辑）
+                                key = (local_num, prog["start"])
+                                if key not in prog_duplicate_key:
+                                    programme_list.append({
+                                        "channel": local_num,
+                                        "start": prog["start"],
+                                        "stop": prog["stop"],
+                                        "title": prog["title"]
+                                    })
+                                    prog_duplicate_key.add(key)
+                                    new_prog_count += 1
+                            if new_prog_count > 0:
+                                matched_in_this_source += 1
+                                total_matched_by_external += 1
+                                write_log(f"{raw_name}({local_num})从{source_name}补充{new_prog_count}条节目（总计{len(ext_progs)}条）", "STEP4_MATCH_SUCCESS")
+                            channel_matched = True
                     else:
                         # 非官方源：名称匹配
                         match_ext_name = fuzzy_match(clean_name_local, epg_identifiers, clean_name)
-                        if not match_ext_name or match_ext_name not in epg_map:
-                            new_pending_channels.append(channel)
-                            continue
-                        
-                        ext_progs = epg_map[match_ext_name]
-                        if not ext_progs:
-                            new_pending_channels.append(channel)
-                            continue
-                        
-                        if not local_num:
-                            local_num = f"{temp_local_num_prefix}{temp_num_counter}"
-                            temp_num_counter += 1
-                            channel["local_num"] = local_num
-                        
-                        for prog in ext_progs:
-                            programme_list.append({
-                                "channel": local_num,
-                                "start": prog["start"],
-                                "stop": prog["stop"],
-                                "title": prog["title"]
-                            })
-                        
-                        matched_in_this_source += 1
-                        total_matched_by_external += 1
-                        write_log(f"{raw_name}({local_num})匹配到{match_ext_name}，新增{len(ext_progs)}条", "STEP4_MATCH_SUCCESS")
-                
-                pending_channels = new_pending_channels
-                write_log(f"{source_name}匹配完成 - 成功{matched_in_this_source}个，剩余{len(pending_channels)}个", "STEP4_SOURCE_SUMMARY")
-                print(f"  → 源{source_idx+1}匹配成功{matched_in_this_source}个，剩余{len(pending_channels)}个")
+                        if match_ext_name and match_ext_name in epg_map:
+                            ext_progs = epg_map[match_ext_name]
+                            if ext_progs:
+                                if not local_num:
+                                    local_num = f"{temp_local_num_prefix}{temp_num_counter}"
+                                    temp_num_counter += 1
+                                    channel["local_num"] = local_num
+                                
+                                new_prog_count = 0  # 新增节目数（去重后）
+                                for prog in ext_progs:
+                                    # 生成去重键：频道+开始时间（核心去重逻辑）
+                                    key = (local_num, prog["start"])
+                                    if key not in prog_duplicate_key:
+                                        programme_list.append({
+                                            "channel": local_num,
+                                            "start": prog["start"],
+                                            "stop": prog["stop"],
+                                            "title": prog["title"]
+                                        })
+                                        prog_duplicate_key.add(key)
+                                        new_prog_count += 1
+                                if new_prog_count > 0:
+                                    matched_in_this_source += 1
+                                    total_matched_by_external += 1
+                                    write_log(f"{raw_name}({local_num})从{source_name}补充{new_prog_count}条节目（总计{len(ext_progs)}条）", "STEP4_MATCH_SUCCESS")
+                                channel_matched = True
+                    
+                    # 关键修改：无论是否匹配成功，都保留频道到待匹配列表
+                    new_pending_channels.append(channel)
+
+                pending_channels = new_pending_channels  # 所有频道都保留，供后续源补充
+                write_log(f"{source_name}匹配完成 - 补充{matched_in_this_source}个频道的节目，剩余{len(pending_channels)}个待补充", "STEP4_SOURCE_SUMMARY")
+                print(f"  → 源{source_idx+1}补充{matched_in_this_source}个频道的节目，剩余{len(pending_channels)}个待补充")
+
 
         total_unmatched_final = len(pending_channels)
         print(f"[5/7] 多源匹配完成：总计{total_matched_by_external}个，剩余{total_unmatched_final}个未匹配")

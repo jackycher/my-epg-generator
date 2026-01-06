@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-独立EPG生成脚本（升级去重逻辑：名称相似+时间重叠）
-可单独运行：python epg_generator.py
+EPG生成脚本（简化去重：仅按时间区间重合去重）
+核心规则：同一频道下，新节目时间区间与已有节目时间区间重合则跳过
 """
 import os
 import sys
@@ -21,27 +21,23 @@ import urllib.parse
 # ===================== EPG配置区 =====================
 EPG_CONFIG = {
     'ENABLE_OFFICIAL_EPG': False,
-    # 外部EPG总开关
     'ENABLE_EXTERNAL_EPG': True,
-    # 新增：是否保留外部EPG源中的其他频道（非txt文件里的频道）
     'ENABLE_KEEP_OTHER_CHANNELS': True,
     'EPG_SERVER_URL': "http://210.13.21.3",
     'BJcul_PATH': "./bjcul.txt",
-    # 不需要参与多源补充的频道名称列表（完全匹配）- 匹配第一个外部源后不再补充
     'EXCLUDE_MULTI_SOURCE_CHANNELS': [""],
-    # 不需要参与多源补充的频道分类列表（匹配分类行）- 匹配第一个外部源后不再补充
     'EXCLUDE_MULTI_SOURCE_CATEGORIES': ["TS频道", "体验频道"],
-    'EPG_SAVE_PATH': "./epg.xml",          # 精简版XML
-    'EPG_GZ_PATH': "./epg.xml.gz",        # 精简版GZ
-    'EPG_FULL_SAVE_PATH': "./epg_full.xml",  # 完整版XML
-    'EPG_FULL_GZ_PATH': "./epg_full.xml.gz",# 完整版GZ
+    'EPG_SAVE_PATH': "./epg.xml",
+    'EPG_GZ_PATH': "./epg.xml.gz",
+    'EPG_FULL_SAVE_PATH': "./epg_full.xml",
+    'EPG_FULL_GZ_PATH': "./epg_full.xml.gz",
     'LOG_PATH': "./epg_run.log",
     'EPG_OFFSET_START': -1,
     'EPG_OFFSET_END': 3,
     'CACHE_DIR': "./epg_cache",
     'CACHE_TIMEOUT': 30,
     'CACHE_RETRY_TIMES': 2,
-    'KEEP_4K_NAMES': ["CCTV4K", "CCTV4k", "爱上4K", "4K超清"],
+    'KEEP_4K_NAMES': ["CCTV4K", "CCTV4k", "爱上4K"],
     'CLEAN_SUFFIX': ["4k", "4K", "SDR", "HDR", "超高清", "英语", "英文"],
     'TIMEOUT': 30,
     'RETRY_TIMES': 2,
@@ -54,46 +50,11 @@ EPG_CONFIG = {
             "enabled": True
         },
         {
-            "url": "https://epg.zsdc.eu.org/t.xml.gz",
-            "name": "备用EPG源1-zsdc",
-            "is_official": False,
-            "clean_name": True,
-            "enabled": False
-        },
-        {
-            "url": "https://raw.githubusercontent.com/kuke31/xmlgz/main/all.xml.gz",
-            "name": "备用EPG源2-e.erw.cc",
-            "is_official": False,
-            "clean_name": True,
-            "enabled": False
-        },
-        {
-            "url": "https://gitee.com/taksssss/tv/raw/main/epg/112114.xml.gz",
-            "name": "备用EPG源3-112114",
-            "is_official": False,
-            "clean_name": True,
-            "enabled": False
-        },
-        {
             "url": "https://raw.githubusercontent.com/taksssss/tv/main/epg/erw.xml.gz",
             "name": "备用EPG源4-erw",
             "is_official": False,
             "clean_name": True,
             "enabled": True
-        },
-        {
-            "url": "https://gitee.com/taksssss/tv/raw/main/epg/51zmt.xml.gz",
-            "name": "备用EPG源5-51zmt",
-            "is_official": False,
-            "clean_name": True,
-            "enabled": False
-        },
-        {
-            "url": "https://gitee.com/taksssss/tv/raw/main/epg/epgpw_cn.xml.gz",
-            "name": "备用EPG源6-epgpw_cn",
-            "is_official": False,
-            "clean_name": True,
-            "enabled": False
         }
     ],
     'PLAYLIST_FILE_PATH': "https://raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/playlist-zz.json",
@@ -117,79 +78,62 @@ EPG_CONFIG = {
 }
 
 
-# ===================== 新增：去重核心辅助函数 =====================
-def normalize_program_title(title):
-    """标准化节目标题，去除括号、统一数字格式，用于相似性判断"""
-    if not title:
-        return ""
-    # 1. 替换 (数字)、（数字）为纯数字（比如 (1)→1，（2）→2）
-    title = re.sub(r'\((\d+)\)', r'\1', title)  # 英文括号+数字
-    title = re.sub(r'（(\d+)）', r'\1', title)  # 中文括号+数字
-    # 2. 去除所有非核心字符（仅保留中文、字母、数字）
-    title = re.sub(r'[^\u4e00-\u9fa5a-zA-Z0-9]', '', title)
-    # 3. 去除多余空格（防止残留）
-    title = re.sub(r'\s+', '', title)
-    return title.strip()
-
-def parse_time_str(time_str):
-    """解析EPG时间字符串为datetime对象（格式：YYYYMMDDHHMMSS +0800）"""
-    if not time_str or ' ' not in time_str:
-        return None
+# ===================== 核心去重函数（仅时间判断） =====================
+def parse_time_str_to_timestamp(time_str):
+    """解析EPG时间字符串为时间戳（格式：YYYYMMDDHHMMSS +0800）"""
     try:
-        time_part = time_str.split(' ')[0]  # 提取时间部分（去掉时区）
-        return datetime.datetime.strptime(time_part, "%Y%m%d%H%M%S")
+        # 提取时间部分（去掉时区）
+        time_part = time_str.split(' ')[0]
+        # 解析为datetime对象
+        dt = datetime.datetime.strptime(time_part, "%Y%m%d%H%M%S")
+        # 转成时间戳（UTC+8，不影响区间比较）
+        return dt.timestamp()
     except Exception:
         return None
 
-def is_time_overlap(start1, stop1, start2, stop2):
-    """判断两个时间段是否重叠"""
-    # 解析时间
-    s1 = parse_time_str(start1)
-    e1 = parse_time_str(stop1)
-    s2 = parse_time_str(start2)
-    e2 = parse_time_str(stop2)
+def is_time_overlap(new_start_ts, new_end_ts, exist_start_ts, exist_end_ts):
+    """判断两个时间区间是否重合"""
+    # 核心规则：新开始 < 已有结束 且 已有开始 < 新结束 → 重合
+    return new_start_ts < exist_end_ts and exist_start_ts < new_end_ts
+
+def add_program_if_no_time_overlap(programme_list, channel_time_ranges, new_prog):
+    """
+    仅当新节目与已有节目无时间重合时，才添加到列表
+    :param programme_list: 最终节目列表
+    :param channel_time_ranges: 按频道存储的时间区间字典 {channel: [(start_ts, end_ts), ...]}
+    :param new_prog: 新节目字典 {"channel": "", "start": "", "stop": "", "title": ""}
+    :return: bool - 是否添加成功
+    """
+    channel = new_prog.get("channel")
+    start_str = new_prog.get("start")
+    stop_str = new_prog.get("stop")
     
-    # 有任意时间解析失败，默认不重叠（避免误判）
-    if not all([s1, e1, s2, e2]):
+    # 校验必要字段
+    if not channel or not start_str or not stop_str:
         return False
     
-    # 核心重叠判断逻辑：s1 < e2 且 s2 < e1
-    return s1 < e2 and s2 < e1
-
-def is_duplicate_program(channel, start, stop, title, existing_programs):
-    """
-    判断当前节目是否与已有节目重复（核心去重逻辑）
-    判定条件（同时满足）：
-    1. 同一频道
-    2. 名称标准化后相同
-    3. 时间段存在重叠
-    """
-    # 标准化当前节目名称
-    norm_title = normalize_program_title(title)
-    if not norm_title:  # 空名称不判断重复
+    # 解析时间戳
+    new_start_ts = parse_time_str_to_timestamp(start_str)
+    new_end_ts = parse_time_str_to_timestamp(stop_str)
+    if new_start_ts is None or new_end_ts is None:
         return False
     
-    # 遍历已有节目，检查重复
-    for prog in existing_programs:
-        # 条件1：同一频道
-        if prog["channel"] != channel:
-            continue
-        
-        # 条件2：名称标准化后相同
-        prog_norm_title = normalize_program_title(prog["title"])
-        if prog_norm_title != norm_title:
-            continue
-        
-        # 条件3：时间重叠
-        if is_time_overlap(start, stop, prog["start"], prog["stop"]):
-            return True
+    # 初始化该频道的时间区间列表
+    if channel not in channel_time_ranges:
+        channel_time_ranges[channel] = []
     
-    return False
-
+    # 检查是否与已有时间区间重合
+    for (exist_start_ts, exist_end_ts) in channel_time_ranges[channel]:
+        if is_time_overlap(new_start_ts, new_end_ts, exist_start_ts, exist_end_ts):
+            return False  # 时间重合，跳过
+    
+    # 无重合，添加节目并记录时间区间
+    programme_list.append(new_prog)
+    channel_time_ranges[channel].append((new_start_ts, new_end_ts))
+    return True
 
 # ===================== 工具函数 =====================
 def write_log(content, section="INFO"):
-    """EPG专属日志函数"""
     log_path = EPG_CONFIG['LOG_PATH']
     try:
         log_dir = os.path.dirname(log_path)
@@ -204,7 +148,6 @@ def write_log(content, section="INFO"):
         print(f"日志写入失败：{str(e)}")
 
 def get_nested_value(data, path_list):
-    """获取嵌套字典值"""
     if not isinstance(data, dict) or not path_list:
         return None
     current = data
@@ -215,7 +158,6 @@ def get_nested_value(data, path_list):
     return current
 
 def compress_xml_to_gz(xml_path, gz_path):
-    """压缩XML为GZ"""
     try:
         write_log(f"开始压缩：{xml_path} → {gz_path}", "GZ_COMPRESS")
         with open(xml_path, 'rb') as f_in:
@@ -237,12 +179,10 @@ def compress_xml_to_gz(xml_path, gz_path):
         return False
 
 def get_url_md5(url):
-    """生成URL的MD5"""
     encoded_url = urllib.parse.quote_plus(url).encode('utf-8')
     return hashlib.md5(encoded_url).hexdigest()
 
 def download_with_cache(url, cache_dir, timeout=30, retry=2):
-    """带缓存的下载"""
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir, exist_ok=True)
     
@@ -250,7 +190,6 @@ def download_with_cache(url, cache_dir, timeout=30, retry=2):
     cache_file = os.path.join(cache_dir, f"{url_md5}.txt")
     old_cache_file = os.path.join(cache_dir, f"{url_md5}_old.txt")
     
-    # 备份旧缓存
     if os.path.exists(cache_file):
         try:
             if os.path.exists(old_cache_file):
@@ -260,7 +199,6 @@ def download_with_cache(url, cache_dir, timeout=30, retry=2):
         except Exception as e:
             write_log(f"备份缓存失败：{e}", "CACHE_ERROR")
     
-    # 下载新文件
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -282,7 +220,6 @@ def download_with_cache(url, cache_dir, timeout=30, retry=2):
             write_log(f"下载重试{i}失败：{e}", "DOWNLOAD_ERROR")
             continue
     
-    # 处理结果
     if download_success:
         if os.path.exists(old_cache_file):
             os.remove(old_cache_file)
@@ -297,7 +234,6 @@ def download_with_cache(url, cache_dir, timeout=30, retry=2):
             return None
 
 def get_local_path(path):
-    """处理本地/远程路径"""
     if path.startswith(('http://', 'https://')):
         local_file = download_with_cache(
             path, 
@@ -314,12 +250,10 @@ def get_local_path(path):
         return path
 
 def clean_channel_name(raw_name):
-    """清理频道名"""
     if not raw_name:
         return ""
     raw_name = str(raw_name)
     
-    # 保留4K相关标识
     if "4K" in raw_name and any(key in raw_name for key in ["CCTV4K", "4K超高清", "爱上4K"]):
         return raw_name.replace("-", "").replace(" ", "")
     
@@ -332,11 +266,9 @@ def clean_channel_name(raw_name):
     return re.sub(r"\s+", "", clean_name)
 
 def fuzzy_match(local_clean_name, ext_names, clean_ext_name=True):
-    """模糊匹配频道名"""
     if not local_clean_name:
         return None
     
-    # CGTN纪录优先匹配
     if "CGTN" in local_clean_name and "纪录" in local_clean_name:
         for ext_name in ext_names:
             ext_clean = clean_channel_name(ext_name) if clean_ext_name else ext_name.strip().replace(" ", "")
@@ -345,7 +277,6 @@ def fuzzy_match(local_clean_name, ext_names, clean_ext_name=True):
             elif "CGTN" in ext_clean and "纪录" in ext_clean:
                 return ext_name
     
-    # 提取核心标识
     is_cctv4_europe = "CCTV4" in local_clean_name and "欧洲" in local_clean_name
     is_cctv4_america = "CCTV4" in local_clean_name and "美洲" in local_clean_name
     is_cctv4k = "CCTV4K" in local_clean_name
@@ -354,7 +285,6 @@ def fuzzy_match(local_clean_name, ext_names, clean_ext_name=True):
     cctv_pattern = re.compile(r'CCTV(4K|\d+\+?)')
     local_cctv_tag = cctv_pattern.search(local_clean_name).group(1) if cctv_pattern.search(local_clean_name) else None
     
-    # 预处理外部频道
     ext_candidate = []
     for ext_name in ext_names:
         ext_clean = clean_channel_name(ext_name) if clean_ext_name else ext_name.strip().replace(" ", "")
@@ -370,12 +300,10 @@ def fuzzy_match(local_clean_name, ext_names, clean_ext_name=True):
             "len": len(ext_clean)
         })
     
-    # 精准匹配
     for ext in ext_candidate:
         if local_clean_name == ext["clean"]:
             return ext["original"]
     
-    # CCTV4欧洲/美洲优先
     if is_cctv4_europe or is_cctv4_america:
         region_key = "欧洲" if is_cctv4_europe else "美洲"
         region_matched = [ext for ext in ext_candidate if ext["tag"] == "4" and region_key in ext["clean"]]
@@ -383,21 +311,18 @@ def fuzzy_match(local_clean_name, ext_names, clean_ext_name=True):
             region_matched.sort(key=lambda x: x["len"])
             return region_matched[0]["original"]
     
-    # CCTV4K匹配
     if is_cctv4k:
         cctv4k_matched = [ext for ext in ext_candidate if "CCTV4K" in ext["clean"]]
         if cctv4k_matched:
             cctv4k_matched.sort(key=lambda x: x["len"])
             return cctv4k_matched[0]["original"]
     
-    # CCTV标识精准匹配
     if local_cctv_tag:
         tag_matched = [ext for ext in ext_candidate if ext["tag"] == local_cctv_tag]
         if tag_matched:
             tag_matched.sort(key=lambda x: x["len"])
             return tag_matched[0]["original"]
     
-    # 正向包含匹配
     include_matched = [
         ext for ext in ext_candidate
         if local_clean_name in ext["clean"] and ext["len"] <= len(local_clean_name) + 10
@@ -406,7 +331,6 @@ def fuzzy_match(local_clean_name, ext_names, clean_ext_name=True):
         include_matched.sort(key=lambda x: x["len"])
         return include_matched[0]["original"]
     
-    # 兜底匹配（去掉+号）
     local_no_plus = local_clean_name.replace("+", "")
     for ext in ext_candidate:
         ext_no_plus = ext["clean"].replace("+", "")
@@ -416,7 +340,6 @@ def fuzzy_match(local_clean_name, ext_names, clean_ext_name=True):
     return None
 
 def extract_program_title(prog_elem):
-    """提取节目标题"""
     title_zh = prog_elem.find(".//title[@lang='zh']")
     if title_zh is not None and title_zh.text is not None:
         title = title_zh.text.strip()
@@ -432,7 +355,6 @@ def extract_program_title(prog_elem):
     return "未知节目"
 
 def download_url(url):
-    """轻量化下载"""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -448,26 +370,20 @@ def download_url(url):
     return None
 
 def parse_external_epg(epg_data, is_official=False):
-    """解析外部EPG（增强版：返回完整的频道信息和节目）"""
-    external_epg_map = {}  # 用于匹配的映射（key: 频道标识，value: 节目列表）
-    ext_channel_identifiers = []  # 频道标识列表
-    id_to_name_map = {}  # id到频道名的映射
-    # 新增：完整的频道信息（保留所有频道）
-    full_channel_info = {}  # key: 频道id，value: {id, main_name, aliases}
-    # 新增：完整的节目信息（保留所有节目）
-    full_program_info = []  # 所有节目列表 [{"channel_id": "", "start": "", "stop": "", "title": ""}]
+    external_epg_map = {}
+    ext_channel_identifiers = []
+    id_to_name_map = {}
+    full_channel_info = {}
+    full_program_info = []
     
     try:
-        # 解压
         try:
             epg_data = gzip.decompress(epg_data)
         except Exception as e:
             write_log(f"解压失败（非GZ）：{str(e)}", "EPG_PARSE_WARN")
         
-        # 解析XML
         ext_xml = ET.fromstring(epg_data.decode("utf-8", errors="ignore"))
         
-        # 提取所有频道（完整保留）
         for channel in ext_xml.findall(".//channel"):
             cid = channel.get("id", "")
             if not cid:
@@ -482,7 +398,6 @@ def parse_external_epg(epg_data, is_official=False):
             id_to_name_map[cid] = main_name
             ext_channel_identifiers.append(main_name if not is_official else cid)
         
-        # 提取所有节目（完整保留）
         for prog in ext_xml.findall(".//programme"):
             cid = prog.get("channel", "")
             start = prog.get("start")
@@ -500,7 +415,6 @@ def parse_external_epg(epg_data, is_official=False):
                 "title": title
             })
             
-            # 维护原有映射（兼容旧逻辑）
             key = cid if is_official else full_channel_info[cid]["main_name"]
             if key not in external_epg_map:
                 external_epg_map[key] = []
@@ -517,11 +431,9 @@ def parse_external_epg(epg_data, is_official=False):
         error_info = f"解析失败：{str(e)}\n{traceback.format_exc()}"
         write_log(error_info, "EPG_PARSE_ERROR")
     
-    # 返回增强后的结果：原有结果 + 完整频道/节目信息
     return external_epg_map, ext_channel_identifiers, id_to_name_map, full_channel_info, full_program_info
 
 def generate_unique_ext_channel_id(existing_ids, prefix="ext_"):
-    """生成唯一的外部频道ID，避免和已有ID冲突"""
     counter = 1
     while True:
         new_id = f"{prefix}{counter}"
@@ -531,15 +443,12 @@ def generate_unique_ext_channel_id(existing_ids, prefix="ext_"):
 
 # ===================== 主函数 =====================
 def epg_main():
-    """EPG生成主逻辑（可被主文件导入调用）"""
     config = EPG_CONFIG
-    # 初始化日志
     if os.path.exists(config['LOG_PATH']):
         os.remove(config['LOG_PATH'])
     write_log("="*60 + " EPG生成脚本开始运行 " + "="*60, "START")
     start_time = datetime.datetime.now()
     
-    # 验证格式配置
     if config['PLAYLIST_FORMAT'] not in config['FORMAT_MAPPING']:
         error_msg = f"不支持的格式：{config['PLAYLIST_FORMAT']}，支持：{list(config['FORMAT_MAPPING'].keys())}"
         write_log(error_msg, "FATAL")
@@ -551,18 +460,16 @@ def epg_main():
     write_log(f"外部EPG：{'开启' if config['ENABLE_EXTERNAL_EPG'] else '关闭'}", "CONFIG")
     write_log(f"保留其他频道：{'开启' if config['ENABLE_KEEP_OTHER_CHANNELS'] else '关闭'}", "CONFIG")
     
-    # 新增：存储所有外部源的完整频道和节目
-    all_external_channels = {}  # key: 频道id，value: 频道信息（去重）
-    all_external_programs = []   # 所有外部节目（去重前）
-    # 新增：外部频道原ID到新ID的映射（解决ID冲突）
-    ext_id_mapping = {}  # key: 外部原ID，value: 新的唯一ID
+    all_external_channels = {}
+    all_external_programs = []
+    ext_id_mapping = {}
     
     try:
         # 步骤1：读取bjcul.txt
         write_log("开始读取bjcul.txt", "STEP1")
         bjcul_channel_map = {}
         all_bjcul_rtp_urls = []
-        current_category = ""  # 新增：记录当前频道所属分类
+        current_category = ""
         
         bjcul_local_path = get_local_path(config['BJcul_PATH'])
         valid_line_count = 0
@@ -574,9 +481,7 @@ def epg_main():
                     filtered_line_count += 1
                     continue
                 
-                # 新增：识别分类行（包含#genre#的行）
                 if "#genre#" in line:
-                    # 提取分类名（比如 "CCTV频道,#genre#" → "CCTV频道"）
                     current_category = line.replace("#genre#", "").strip().rstrip(',').strip()
                     write_log(f"识别到分类：{current_category}", "STEP1_CATEGORY")
                     filtered_line_count += 1
@@ -590,11 +495,10 @@ def epg_main():
                 raw_name = raw_name.strip()
                 rtp_url = rtp_url.strip()
                 clean_name = clean_channel_name(raw_name)
-                # 新增：记录频道所属分类
                 bjcul_channel_map[rtp_url] = {
                     "raw_name": raw_name,
                     "clean_name": clean_name,
-                    "category": current_category  # 新增：分类信息
+                    "category": current_category
                 }
                 all_bjcul_rtp_urls.append(rtp_url)
                 valid_line_count += 1
@@ -642,14 +546,13 @@ def epg_main():
                 matched_channels[channel_id] = {
                     "raw_name": bjcul_info["raw_name"],
                     "clean_name": bjcul_info["clean_name"],
-                    "category": bjcul_info["category"],  # 新增：传递分类信息
+                    "category": bjcul_info["category"],
                     "local_num": str(user_channel_id),
                     "rtp_url": rtp_url,
                     "channel_name": channel_name
                 }
                 match_success_count += 1
         
-        # 收集未匹配频道
         matched_rtp_urls = [v['rtp_url'] for v in matched_channels.values()]
         for rtp_url in all_bjcul_rtp_urls:
             if rtp_url not in matched_rtp_urls and rtp_url in bjcul_channel_map:
@@ -658,7 +561,7 @@ def epg_main():
                     "type": "unmatched_id",
                     "raw_name": bjcul_info["raw_name"],
                     "clean_name": bjcul_info["clean_name"],
-                    "category": bjcul_info["category"],  # 新增：传递分类信息
+                    "category": bjcul_info["category"],
                     "rtp_url": rtp_url,
                     "local_num": None
                 })
@@ -670,8 +573,9 @@ def epg_main():
         # 步骤3：处理官方EPG
         write_log("开始处理官方EPG", "STEP3")
         programme_list = []
+        # 新增：时间区间字典（核心去重数据结构）
+        channel_time_ranges = {}
         official_fail_count = 0
-        # 新增：记录哪些频道已从官方源获取到节目
         channel_has_official_prog = set()
         
         if config['ENABLE_OFFICIAL_EPG']:
@@ -704,16 +608,17 @@ def epg_main():
                                 continue
                             title = schedule.get("title", "").strip() or "未知节目"
                             time_format = "%Y%m%d%H%M%S +0800"
-                            programme_list.append({
+                            new_prog = {
                                 "channel": local_num,
                                 "start": start_time.strftime(time_format),
                                 "stop": end_time.strftime(time_format),
                                 "title": title
-                            })
-                            channel_prog_count += 1
-                        download_fail = False
-                        # 标记该频道已获取官方节目
-                        channel_has_official_prog.add(local_num)
+                            }
+                            # 使用新的时间去重逻辑添加节目
+                            if add_program_if_no_time_overlap(programme_list, channel_time_ranges, new_prog):
+                                channel_prog_count += 1
+                            download_fail = False
+                            channel_has_official_prog.add(local_num)
                     except Exception as e:
                         write_log(f"解析{raw_name}({channel_code})失败：{str(e)}", "STEP3_ERROR")
                         continue
@@ -723,13 +628,13 @@ def epg_main():
                         "type": "official_fail",
                         "raw_name": raw_name,
                         "clean_name": channel_info["clean_name"],
-                        "category": channel_info["category"],  # 新增：传递分类信息
+                        "category": channel_info["category"],
                         "rtp_url": channel_info["rtp_url"],
                         "local_num": local_num
                     })
                     official_fail_count += 1
                 else:
-                    write_log(f"{raw_name}({channel_code})下载{channel_prog_count}条节目", "STEP3_DETAIL")
+                    write_log(f"{raw_name}({channel_code})下载{channel_prog_count}条节目（去重后）", "STEP3_DETAIL")
         else:
             write_log("官方EPG关闭，所有匹配ID的频道使用外部源", "STEP3_SKIP")
             for channel_code in matched_channels.keys():
@@ -738,33 +643,31 @@ def epg_main():
                     "type": "official_skip",
                     "raw_name": channel_info["raw_name"],
                     "clean_name": channel_info["clean_name"],
-                    "category": channel_info["category"],  # 新增：传递分类信息
+                    "category": channel_info["category"],
                     "rtp_url": channel_info["rtp_url"],
                     "local_num": channel_info["local_num"]
                 })
             official_fail_count = len(matched_channels)
         
         total_pending_channels = len(unmatched_bjcul_channels)
-        print(f"[3/7] 官方EPG处理：{len(programme_list)} 条节目，{official_fail_count} 个需匹配外部源")
-        write_log(f"官方EPG完成 - 节目{len(programme_list)}条，需外部匹配{official_fail_count}个", "STEP3")
+        print(f"[3/7] 官方EPG处理：{len(programme_list)} 条节目（去重后），{official_fail_count} 个需匹配外部源")
+        write_log(f"官方EPG完成 - 节目{len(programme_list)}条（去重后），需外部匹配{official_fail_count}个", "STEP3")
 
-        # 步骤4：多EPG源匹配（终极修正版 + 高级去重）
+        # 步骤4：多EPG源匹配（使用新的时间去重逻辑）
         write_log("开始多EPG源匹配", "STEP4")
         temp_local_num_prefix = "unm_"
         temp_num_counter = 1
         total_matched_by_external = 0
         pending_channels = unmatched_bjcul_channels.copy()
         
-        # 核心修正：拆分外部节目状态标记
-        channel_has_official_prog = set()  # 已获取官方节目（所有频道都跳过外部源）
-        channel_has_external_single = set()  # 排除列表频道（单源）- 已获取外部节目，跳过后续源
-        channel_has_external_multi = set()   # 非排除列表频道（多源）- 已获取外部节目，仍允许后续源补充
+        channel_has_official_prog = set()
+        channel_has_external_single = set()
+        channel_has_external_multi = set()
         
         if not config['ENABLE_EXTERNAL_EPG']:
             write_log("外部EPG总开关关闭，跳过所有外部源匹配", "STEP4_SKIP_ALL")
             print(f"[4/7] 外部EPG总开关关闭，跳过所有外部源匹配")
         else:
-            # 遍历外部源（过滤掉disabled的源）
             enabled_sources = [s for s in config['EXTERNAL_EPG_SOURCES'] if s.get("enabled", True)]
             write_log(f"外部EPG总开关开启，有效源数量：{len(enabled_sources)}（总源数：{len(config['EXTERNAL_EPG_SOURCES'])}）", "STEP4_SOURCE_COUNT")
             
@@ -781,28 +684,22 @@ def epg_main():
                 write_log(f"处理第{source_idx+1}个源：{source_name} ({source_url})", "STEP4_SOURCE")
                 print(f"[4/7] 匹配外部源{source_idx+1}：{source_name}（待匹配{len(pending_channels)}个）")
                 
-                # 下载EPG源
                 epg_data = download_url(source_url)
                 if not epg_data:
                     write_log(f"源{source_name}下载失败", "STEP4_SOURCE_FAIL")
                     continue
                 
-                # 解析EPG源（增强版）
                 epg_map, epg_identifiers, id_to_name_map, full_channel_info, full_program_info = parse_external_epg(epg_data, is_official)
                 if not epg_map or len(epg_identifiers) == 0:
                     write_log(f"源{source_name}解析失败", "STEP4_SOURCE_PARSE_FAIL")
                     continue
                 
-                # 新增：收集外部源的所有频道和节目（去重+ID重映射）
                 if config['ENABLE_KEEP_OTHER_CHANNELS']:
-                    # 先收集已存在的频道ID（避免重复）
                     matched_local_nums = [v['local_num'] for v in matched_channels.values()]
                     existing_ids = set(matched_local_nums) | set([c['local_num'] for c in unmatched_bjcul_channels if c['local_num']])
                     existing_ids.update(all_external_channels.keys())
             
-                    # 合并频道（按id去重+ID重映射）
                     for cid, channel_info in full_channel_info.items():
-                        # 如果原ID已存在，生成新ID
                         if cid in existing_ids or cid in ext_id_mapping:
                             if cid not in ext_id_mapping:
                                 new_id = generate_unique_ext_channel_id(existing_ids | set(ext_id_mapping.values()))
@@ -819,8 +716,6 @@ def epg_main():
                             }
                         existing_ids.add(use_id)
 
-                    
-                    # 合并节目（使用新ID，并且统一键名为channel）
                     for prog in full_program_info:
                         original_cid = prog["channel_id"]
                         use_cid = ext_id_mapping.get(original_cid, original_cid)
@@ -831,21 +726,16 @@ def epg_main():
                             "title": prog["title"]
                         })
                 
-
-                # ===== 终极修正：多源补充逻辑 + 高级去重 =====
                 matched_in_this_source = 0
-                next_pending_channels = []  # 下一个源的待匹配列表
+                next_pending_channels = []
                 
                 for channel in pending_channels:
                     clean_name_local = channel["clean_name"]
                     raw_name = channel["raw_name"]
                     local_num = channel["local_num"]
                     channel_category = channel.get("category", "")
-                    channel_matched = False  # 标记当前频道是否在本源性匹配到节目
+                    channel_matched = False
                     
-                    # 判断是否需要跳过当前源：
-                    # 1. 已获取官方节目 → 所有频道都跳过
-                    # 2. 排除列表频道且已获取外部节目 → 跳过
                     skip_current_source = False
                     if local_num in channel_has_official_prog:
                         write_log(f"{raw_name}已获取官方节目，跳过当前源补充", "STEP4_SKIP_OFFICIAL")
@@ -858,48 +748,40 @@ def epg_main():
                         skip_current_source = True
                     
                     if skip_current_source:
-                        # 排除列表频道：已获取节目，不再进入下一个源
                         if not (raw_name in config['EXCLUDE_MULTI_SOURCE_CHANNELS'] or channel_category in config['EXCLUDE_MULTI_SOURCE_CATEGORIES']):
                             next_pending_channels.append(channel)
                         continue
                     
-                    # 判断是否为排除多源补充的频道
                     is_exclude_multi = (
                         raw_name in config['EXCLUDE_MULTI_SOURCE_CHANNELS'] 
                         or channel_category in config['EXCLUDE_MULTI_SOURCE_CATEGORIES']
                     )
                     
-                    # 官方源：ID匹配
                     if is_official and local_num and not local_num.startswith(temp_local_num_prefix):
                         if local_num in epg_identifiers and epg_map.get(local_num):
                             ext_channel_name = id_to_name_map.get(local_num, f"ID_{local_num}")
                             ext_progs = epg_map[local_num]
-                            new_prog_count = 0  # 新增节目数（去重后）
+                            new_prog_count = 0
                             for prog in ext_progs:
-                                # 核心升级：调用高级去重函数判断是否重复
-                                if is_duplicate_program(local_num, prog["start"], prog["stop"], prog["title"], programme_list):
-                                    continue  # 重复则跳过添加
-                                
-                                # 无重复，添加节目
-                                programme_list.append({
+                                new_prog = {
                                     "channel": local_num,
                                     "start": prog["start"],
                                     "stop": prog["stop"],
                                     "title": prog["title"]
-                                })
-                                new_prog_count += 1
+                                }
+                                # 使用新的时间去重逻辑添加节目
+                                if add_program_if_no_time_overlap(programme_list, channel_time_ranges, new_prog):
+                                    new_prog_count += 1
                             if new_prog_count > 0:
                                 matched_in_this_source += 1
                                 total_matched_by_external += 1
-                                # 根据频道类型标记状态
                                 if is_exclude_multi:
                                     channel_has_external_single.add(local_num)
                                 else:
                                     channel_has_external_multi.add(local_num)
-                                write_log(f"{raw_name}({local_num})从{source_name}补充{new_prog_count}条节目（总计{len(ext_progs)}条）", "STEP4_MATCH_SUCCESS")
+                                write_log(f"{raw_name}({local_num})从{source_name}补充{new_prog_count}条节目（去重后）", "STEP4_MATCH_SUCCESS")
                                 channel_matched = True
                     else:
-                        # 非官方源：名称匹配
                         match_ext_name = fuzzy_match(clean_name_local, epg_identifiers, clean_name)
                         if match_ext_name and match_ext_name in epg_map:
                             ext_progs = epg_map[match_ext_name]
@@ -909,37 +791,27 @@ def epg_main():
                                     temp_num_counter += 1
                                     channel["local_num"] = local_num
                                 
-                                new_prog_count = 0  # 新增节目数（去重后）
+                                new_prog_count = 0
                                 for prog in ext_progs:
-                                    # 核心升级：调用高级去重函数判断是否重复
-                                    if is_duplicate_program(local_num, prog["start"], prog["stop"], prog["title"], programme_list):
-                                        continue  # 重复则跳过添加
-                                    
-                                    # 无重复，添加节目
-                                    programme_list.append({
+                                    new_prog = {
                                         "channel": local_num,
                                         "start": prog["start"],
                                         "stop": prog["stop"],
                                         "title": prog["title"]
-                                    })
-                                    new_prog_count += 1
+                                    }
+                                    # 使用新的时间去重逻辑添加节目
+                                    if add_program_if_no_time_overlap(programme_list, channel_time_ranges, new_prog):
+                                        new_prog_count += 1
                                 if new_prog_count > 0:
                                     matched_in_this_source += 1
                                     total_matched_by_external += 1
-                                    # 根据频道类型标记状态
                                     if is_exclude_multi:
                                         channel_has_external_single.add(local_num)
                                     else:
                                         channel_has_external_multi.add(local_num)
-                                    write_log(f"{raw_name}({local_num})从{source_name}补充{new_prog_count}条节目（总计{len(ext_progs)}条）", "STEP4_MATCH_SUCCESS")
+                                    write_log(f"{raw_name}({local_num})从{source_name}补充{new_prog_count}条节目（去重后）", "STEP4_MATCH_SUCCESS")
                                     channel_matched = True
                     
-                    # 待匹配列表维护逻辑：
-                    # 1. 排除列表频道：
-                    #    - 匹配成功 → 不再进入下一个源
-                    #    - 未匹配成功 → 继续进入下一个源
-                    # 2. 非排除列表频道：
-                    #    - 无论是否匹配成功 → 都进入下一个源（多源补充）
                     if not is_exclude_multi:
                         next_pending_channels.append(channel)
                     else:
@@ -948,25 +820,22 @@ def epg_main():
                         else:
                             write_log(f"{raw_name}（分类：{channel_category}）为排除多源频道，匹配成功后不再参与后续源", "STEP4_EXCLUDE_MULTI")
 
-                pending_channels = next_pending_channels  # 更新待匹配列表
+                pending_channels = next_pending_channels
                 write_log(f"{source_name}匹配完成 - 补充{matched_in_this_source}个频道的节目，剩余{len(pending_channels)}个待补充", "STEP4_SOURCE_SUMMARY")
                 print(f"  → 源{source_idx+1}补充{matched_in_this_source}个频道的节目，剩余{len(pending_channels)}个待补充")
-
 
         total_unmatched_final = len(pending_channels)
         print(f"[5/7] 多源匹配完成：总计{total_matched_by_external}个，剩余{total_unmatched_final}个未匹配")
         write_log(f"多源匹配汇总 - 成功{total_matched_by_external}个，未匹配{total_unmatched_final}个", "STEP4_FINAL_SUMMARY")
 
-        # 步骤5：生成XML（先精简版，再完整版）
+        # 步骤5：生成XML
         write_log("开始生成精简版EPG XML", "STEP5_LITE")
-        # ===== 生成精简版XML（仅包含txt中的频道）=====
         root_lite = ET.Element("tv", {
             "generator-info-name": "MY EPG Generator v4.1 (Lite)",
             "generator-info-url": "https://github.com/jackycher/my-epg-generator",
             "generated-time": "UTC" + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
         
-        # 第一步：添加txt匹配的频道
         channel_add_count = 0
         for channel_code in matched_channels.keys():
             channel_info = matched_channels[channel_code]
@@ -976,7 +845,6 @@ def epg_main():
             ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = raw_name
             channel_add_count += 1
         
-        # 第二步：添加临时频道
         temp_channel_add_count = 0
         for channel in unmatched_bjcul_channels:
             if channel["local_num"] and channel["local_num"].startswith(temp_local_num_prefix):
@@ -986,7 +854,6 @@ def epg_main():
                 ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = raw_name
                 temp_channel_add_count += 1
         
-        # 第三步：添加节目（仅txt相关）
         seen_progs_lite = set()
         sorted_progs_lite = sorted(programme_list, key=lambda x: (x["channel"], x["start"]))
         prog_add_count_lite = 0
@@ -995,7 +862,6 @@ def epg_main():
         for prog in sorted_progs_lite:
             if not prog.get("channel") or not prog.get("start") or not prog.get("title"):
                 continue
-            # 去重键：频道+开始时间+标题（兜底去重）
             key = (prog["channel"], prog["start"], prog["title"])
             if key in seen_progs_lite:
                 continue
@@ -1011,7 +877,6 @@ def epg_main():
             if prog["title"] != "未知节目":
                 non_unknown_count_lite += 1
         
-        # 保存精简版XML
         ET.ElementTree(root_lite).write(
             config['EPG_SAVE_PATH'],
             encoding="UTF-8",
@@ -1022,64 +887,52 @@ def epg_main():
         print(f"[6/7] 生成精简版EPG：{config['EPG_SAVE_PATH']}（{prog_add_count_lite}条节目）")
         write_log(f"精简版XML生成成功：{config['EPG_SAVE_PATH']}，总频道{channel_add_count + temp_channel_add_count}个（txt{channel_add_count} + 临时{temp_channel_add_count}）", "STEP5_LITE")
         
-        # 压缩精简版为GZ
         print("[6/7] 压缩精简版为epg.xml.gz...")
         compress_xml_to_gz(config['EPG_SAVE_PATH'], config['EPG_GZ_PATH'])
 
-        # ===== 生成完整版XML（包含外部所有频道）=====
         other_channel_add_count = 0
         prog_add_count_full = 0
         non_unknown_count_full = 0
         if config['ENABLE_KEEP_OTHER_CHANNELS'] and all_external_channels:
             write_log("开始生成完整版EPG XML", "STEP5_FULL")
-            # 复制精简版的根节点
             root_full = ET.Element("tv", {
                 "generator-info-name": "MY EPG Generator v4.1 (Full)",
                 "generator-info-url": "https://github.com/jackycher/my-epg-generator",
                 "generated-time": "UTC" + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             })
             
-            # 第一步：复制精简版的所有频道
             for channel_elem in root_lite.findall(".//channel"):
                 new_channel = ET.SubElement(root_full, "channel", {"id": channel_elem.get("id")})
                 for dn_elem in channel_elem.findall(".//display-name"):
                     ET.SubElement(new_channel, "display-name", {"lang": "zh"}).text = dn_elem.text
             
-            # 第二步：添加外部源的其他频道
             other_channel_add_count = 0
             existing_channel_ids = set([c.get("id") for c in root_full.findall(".//channel")])
             for cid, channel_info in all_external_channels.items():
                 if cid in existing_channel_ids:
                     continue
                 channel_elem = ET.SubElement(root_full, "channel", {"id": cid})
-                # 添加主名称
                 ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = channel_info["main_name"]
-                # 添加别名（可选）
-                for alias in channel_info["aliases"][1:]:  # 跳过第一个（主名称）
+                for alias in channel_info["aliases"][1:]:
                     ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = alias
                 other_channel_add_count += 1
             write_log(f"添加外部源其他频道：{other_channel_add_count}个", "STEP5_FULL_CHANNELS")
             
-            # 第三步：准备所有节目（精简版 + 外部源节目）
             all_programs_full = []
             all_programs_full.extend(programme_list)
             all_programs_full.extend(all_external_programs)
             
-            # 第四步：添加节目（去重，增加数据校验）
-            seen_progs_full = set()
-            # 过滤无效数据，避免KeyError
             valid_progs_full = []
             for prog in all_programs_full:
                 if isinstance(prog, dict) and "channel" in prog and "start" in prog and "title" in prog:
                     valid_progs_full.append(prog)
             
-            # 对有效数据排序
             sorted_progs_full = sorted(valid_progs_full, key=lambda x: (x["channel"], x["start"]))
             
+            seen_progs_full = set()
             for prog in sorted_progs_full:
                 if not prog.get("channel") or not prog.get("start") or not prog.get("title"):
                     continue
-                # 去重键：频道+开始时间+标题
                 key = (prog["channel"], prog["start"], prog["title"])
                 if key in seen_progs_full:
                     continue
@@ -1095,7 +948,6 @@ def epg_main():
                 if prog["title"] != "未知节目":
                     non_unknown_count_full += 1
             
-            # 保存完整版XML
             ET.ElementTree(root_full).write(
                 config['EPG_FULL_SAVE_PATH'],
                 encoding="UTF-8",
@@ -1106,13 +958,11 @@ def epg_main():
             print(f"[6/7] 生成完整版EPG：{config['EPG_FULL_SAVE_PATH']}（去重后{prog_add_count_full}条，新增外部频道{other_channel_add_count}个）")
             write_log(f"完整版XML生成成功：{config['EPG_FULL_SAVE_PATH']}，总频道{channel_add_count + temp_channel_add_count + other_channel_add_count}个", "STEP5_FULL")
             
-            # 压缩完整版为GZ
             print("[6/7] 压缩完整版为epg_full.xml.gz...")
             compress_xml_to_gz(config['EPG_FULL_SAVE_PATH'], config['EPG_FULL_GZ_PATH'])
         else:
             write_log("未开启保留其他频道，跳过完整版生成", "STEP5_FULL_SKIP")
 
-        # 步骤6：统计结果
         write_log("统计运行结果", "STEP6")
         end_time = datetime.datetime.now()
         run_duration = (end_time - start_time).total_seconds()
@@ -1145,10 +995,8 @@ def epg_main():
         print(f"详细日志：{config['LOG_PATH']}")
         sys.exit(1)
 
-# ===================== 独立运行入口 =====================
 if __name__ == "__main__":
-    # 单独运行此脚本时，直接执行EPG生成
     print("="*60)
-    print("独立运行EPG生成脚本（升级去重逻辑：名称相似+时间重叠）")
+    print("独立运行EPG生成脚本（简化去重：仅按时间区间重合去重）")
     print("="*60)
     epg_main()

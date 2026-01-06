@@ -688,9 +688,11 @@ def epg_main():
                 # 新增：收集外部源的所有频道和节目（去重+ID重映射）
                 if config['ENABLE_KEEP_OTHER_CHANNELS']:
                     # 先收集已存在的频道ID（避免重复）
-                    existing_ids = set(matched_channels.values()) | set([c['local_num'] for c in unmatched_bjcul_channels if c['local_num']])
+                    # 修复：只提取matched_channels中的local_num，而非整个字典
+                    matched_local_nums = [v['local_num'] for v in matched_channels.values()]
+                    existing_ids = set(matched_local_nums) | set([c['local_num'] for c in unmatched_bjcul_channels if c['local_num']])
                     existing_ids.update(all_external_channels.keys())
-                    
+    
                     # 合并频道（按id去重+ID重映射）
                     for cid, channel_info in full_channel_info.items():
                         # 如果原ID已存在，生成新ID
@@ -701,7 +703,7 @@ def epg_main():
                             use_id = ext_id_mapping[cid]
                         else:
                             use_id = cid
-                        
+        
                         if use_id not in all_external_channels:
                             all_external_channels[use_id] = {
                                 "original_id": cid,
@@ -709,6 +711,7 @@ def epg_main():
                                 "aliases": channel_info["aliases"]
                             }
                         existing_ids.add(use_id)
+
                     
                     # 合并节目（使用新ID）
                     for prog in full_program_info:

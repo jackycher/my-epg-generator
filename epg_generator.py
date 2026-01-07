@@ -4,6 +4,7 @@
 EPG生成脚本（简化去重：仅按时间区间重合去重）
 核心规则：同一频道下，新节目时间区间与已有节目时间区间重合则跳过
 修复点：外部源ID与本地频道ID冲突，外部频道强制生成独立ID，仅按名称去重
+新增功能：外部EPG源支持频道重命名配置
 """
 import os
 import sys
@@ -48,49 +49,58 @@ EPG_CONFIG = {
             "name": "主EPG源-zzzz0317",
             "is_official": False,
             "clean_name": True,
-            "enabled": True
+            "enabled": True,
+            # 新增：频道重命名规则 [["原名称", "新名称"], ["影视剧场", "北京影视剧场"] ...]，默认空列表
+            "channel_rename": [["重温经典", "北京重温经典"]]
         },
         {
             "url": "https://raw.githubusercontent.com/taksssss/tv/main/epg/erw.xml.gz",
             "name": "备用EPG源4-erw",
             "is_official": False,
             "clean_name": True,
-            "enabled": True
+            "enabled": True,
+            # 新增：默认空列表（不重命名）
+            "channel_rename": []
         },
         {
             "url": "https://epg.zsdc.eu.org/t.xml.gz",
             "name": "备用EPG源1-zsdc",
             "is_official": False,
             "clean_name": True,
-            "enabled": False
+            "enabled": False,
+            "channel_rename": []
         },
         {
             "url": "https://raw.githubusercontent.com/kuke31/xmlgz/main/all.xml.gz",
             "name": "备用EPG源2-e.erw.cc",
             "is_official": False,
             "clean_name": True,
-            "enabled": False
+            "enabled": False,
+            "channel_rename": []
         },
         {
             "url": "https://gitee.com/taksssss/tv/raw/main/epg/112114.xml.gz",
             "name": "备用EPG源3-112114",
             "is_official": False,
             "clean_name": True,
-            "enabled": False
+            "enabled": False,
+            "channel_rename": []
         },
         {
             "url": "https://gitee.com/taksssss/tv/raw/main/epg/51zmt.xml.gz",
             "name": "备用EPG源5-51zmt",
             "is_official": False,
             "clean_name": True,
-            "enabled": False
+            "enabled": False,
+            "channel_rename": []
         },
         {
             "url": "https://gitee.com/taksssss/tv/raw/main/epg/epgpw_cn.xml.gz",
             "name": "备用EPG源6-epgpw_cn",
             "is_official": False,
             "clean_name": True,
-            "enabled": False
+            "enabled": False,
+            "channel_rename": []
         }
     ],
     'PLAYLIST_FILE_PATH': "https://raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/playlist-zz.json",
@@ -713,6 +723,56 @@ def epg_main():
                 if not epg_map or len(epg_identifiers) == 0:
                     write_log(f"源{source_name}解析失败", "STEP4_SOURCE_PARSE_FAIL")
                     continue
+
+                # ===================== 新增：频道重命名逻辑 =====================
+                # 读取当前源的重命名规则
+                channel_rename_rules = epg_source.get("channel_rename", [])
+                if channel_rename_rules and len(channel_rename_rules) > 0:
+                    # 构建重命名映射（原名称→新名称）
+                    rename_map = {}
+                    for old_name, new_name in channel_rename_rules:
+                        if old_name and new_name:  # 跳过空规则
+                            rename_map[old_name.strip()] = new_name.strip()
+                    
+                    if rename_map:
+                        # 1. 处理epg_map（节目映射的频道名）
+                        new_epg_map = {}
+                        for old_key, progs in epg_map.items():
+                            new_key = rename_map.get(old_key, old_key)
+                            if new_key in new_epg_map:
+                                new_epg_map[new_key].extend(progs)
+                            else:
+                                new_epg_map[new_key] = progs
+                        epg_map = new_epg_map
+                        
+                        # 2. 处理频道标识符列表（去重）
+                        new_epg_identifiers = []
+                        for ident in epg_identifiers:
+                            new_ident = rename_map.get(ident, ident)
+                            if new_ident not in new_epg_identifiers:
+                                new_epg_identifiers.append(new_ident)
+                        epg_identifiers = new_epg_identifiers
+                        
+                        # 3. 处理full_channel_info（频道详情）
+                        for cid, info in full_channel_info.items():
+                            # 重命名主名称
+                            info["main_name"] = rename_map.get(info["main_name"], info["main_name"])
+                            # 重命名别名（去重）
+                            new_aliases = []
+                            for alias in info["aliases"]:
+                                new_alias = rename_map.get(alias, alias)
+                                if new_alias not in new_aliases:
+                                    new_aliases.append(new_alias)
+                            info["aliases"] = new_aliases
+                        
+                        # 4. 处理id_to_name_map（ID→名称映射）
+                        new_id_to_name_map = {}
+                        for cid, old_name in id_to_name_map.items():
+                            new_id_to_name_map[cid] = rename_map.get(old_name, old_name)
+                        id_to_name_map = new_id_to_name_map
+                        
+                        write_log(f"{source_name}完成频道重命名，生效规则数：{len(rename_map)}", "STEP4_RENAME")
+                # ===================== 新增结束 =====================
                 
                 if config['ENABLE_KEEP_OTHER_CHANNELS']:
                     # 收集所有已存在的频道ID（本地+临时+已生成的外部ID）

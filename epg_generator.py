@@ -3,7 +3,8 @@
 """
 EPG生成脚本（简化去重：仅按时间区间重合去重）
 核心规则：同一频道下，新节目时间区间与已有节目时间区间重合则跳过
-修复点：外部源ID与本地频道ID冲突，外部频道强制生成独立ID，仅按名称去重
+修复点1：外部源ID与本地频道ID冲突，外部频道强制生成独立ID，仅按名称去重
+修复点2：完整版XML外部频道漏加问题，区分本地/外部名称集合，仅过滤本地同名
 新增功能：外部EPG源支持频道重命名配置
 """
 import os
@@ -50,8 +51,8 @@ EPG_CONFIG = {
             "is_official": False,
             "clean_name": True,
             "enabled": True,
-            # 新增：频道重命名规则 [["原名称", "新名称"], ["影视剧场", "北京影视剧场"] ...]，默认空列表
-            "channel_rename": [["重温经典", "北京重温经典"]]
+            # 新增：频道重命名规则 [["原名称", "新名称"], ...]，默认空列表
+            "channel_rename": [["重温经典", "北京重温经典"], ["影视剧场", "北京影视剧场"]]
         },
         {
             "url": "https://raw.githubusercontent.com/taksssss/tv/main/epg/erw.xml.gz",
@@ -59,7 +60,6 @@ EPG_CONFIG = {
             "is_official": False,
             "clean_name": True,
             "enabled": True,
-            # 新增：默认空列表（不重命名）
             "channel_rename": []
         },
         {
@@ -496,6 +496,8 @@ def epg_main():
     all_external_programs = []  # 存储外部节目（原始ID关联）
     ext_id_mapping = {}  # 外部原始ID → 最终频道ID（本地或新生成）
     ext_channel_name_to_final_id = {}  # 外部频道名称 → 最终频道ID（用于名称去重）
+    # 修复：新增外部最终ID→频道信息映射，方便完整版查找
+    ext_final_id_to_info = {}
     
     try:
         # 步骤1：读取bjcul.txt
@@ -503,6 +505,8 @@ def epg_main():
         bjcul_channel_map = {}
         all_bjcul_rtp_urls = []
         current_category = ""
+        # 修复：收集本地txt所有频道名称（用于后续过滤外部同名）
+        local_channel_names = set()
         
         bjcul_local_path = get_local_path(config['BJcul_PATH'])
         valid_line_count = 0
@@ -534,11 +538,15 @@ def epg_main():
                     "category": current_category
                 }
                 all_bjcul_rtp_urls.append(rtp_url)
+                # 修复：添加到本地频道名称集合
+                local_channel_names.add(raw_name)
                 valid_line_count += 1
         
         all_bjcul_rtp_urls = list(set(all_bjcul_rtp_urls))
         total_valid_channels = len(all_bjcul_rtp_urls)
-        print(f"[1/7] 读取bjcul.txt：{total_valid_channels} 个有效频道")
+        # 修复：打印本地频道名称数量
+        write_log(f"收集本地频道名称：{len(local_channel_names)}个", "STEP1_LOCAL_NAMES")
+        print(f"[1/7] 读取bjcul.txt：{total_valid_channels} 个有效频道（{len(local_channel_names)}个唯一名称）")
         write_log(f"读取完成 - 过滤{filtered_line_count}行，有效{total_valid_channels}个", "STEP1")
 
         # 步骤2：匹配频道ID
@@ -785,12 +793,12 @@ def epg_main():
                         ext_main_name = channel_info["main_name"].strip()
                         ext_aliases = channel_info["aliases"]
                         
-                        # 1. 先检查名称是否已存在（本地或已添加的外部频道）
+                        # 1. 先检查名称是否已存在（外部源之间的同名）
                         if ext_main_name in ext_channel_name_to_final_id:
                             # 名称已存在，关联到已有ID
                             final_id = ext_channel_name_to_final_id[ext_main_name]
                             ext_id_mapping[ext_raw_cid] = final_id
-                            write_log(f"外部频道名称[{ext_main_name}]已存在，关联到ID[{final_id}]（外部原始ID：{ext_raw_cid}）", "STEP4_NAME_DUP")
+                            write_log(f"外部频道名称[{ext_main_name}]已存在（跨源），关联到ID[{final_id}]（外部原始ID：{ext_raw_cid}）", "STEP4_NAME_DUP")
                             continue
                         
                         # 2. 名称不存在，生成新的唯一ID（避免与本地冲突）
@@ -806,6 +814,8 @@ def epg_main():
                             "main_name": ext_main_name,
                             "aliases": ext_aliases
                         }
+                        # 修复：同步更新外部最终ID→信息映射
+                        ext_final_id_to_info[new_ext_id] = all_external_channels[ext_raw_cid]
                         write_log(f"新增外部频道：名称[{ext_main_name}]，生成独立ID[{new_ext_id}]（外部原始ID：{ext_raw_cid}）", "STEP4_NEW_EXT_CHANNEL")
                 
                     # 处理外部节目：关联到最终ID（本地或新生成的外部ID）
@@ -921,7 +931,7 @@ def epg_main():
         print(f"[5/7] 多源匹配完成：总计{total_matched_by_external}个，剩余{total_unmatched_final}个未匹配")
         write_log(f"多源匹配汇总 - 成功{total_matched_by_external}个，未匹配{total_unmatched_final}个", "STEP4_FINAL_SUMMARY")
 
-        # 步骤5：生成XML（修复外部ID冲突）
+        # 步骤5：生成XML（修复外部ID冲突+漏加问题）
         write_log("开始生成精简版EPG XML", "STEP5_LITE")
         root_lite = ET.Element("tv", {
             "generator-info-name": "MY EPG Generator v4.1 (Lite)",
@@ -990,7 +1000,7 @@ def epg_main():
         other_channel_add_count = 0
         prog_add_count_full = 0
         non_unknown_count_full = 0
-        if config['ENABLE_KEEP_OTHER_CHANNELS'] and all_external_channels:
+        if config['ENABLE_KEEP_OTHER_CHANNELS'] and ext_channel_name_to_final_id:  # 修复：判断是否有外部频道
             write_log("开始生成完整版EPG XML", "STEP5_FULL")
             root_full = ET.Element("tv", {
                 "generator-info-name": "MY EPG Generator v4.1 (Full)",
@@ -1009,15 +1019,11 @@ def epg_main():
             final_channel_name_to_id = local_channel_name_to_id.copy()
             existing_channel_ids = set([c.get("id") for c in root_full.findall(".//channel")])
             
-            # 添加外部频道：仅名称不重复时添加，使用生成的独立ID
-            for ext_raw_cid, channel_info in all_external_channels.items():
-                ext_main_name = channel_info["main_name"].strip()
-                ext_final_id = channel_info["final_id"]
-                ext_aliases = channel_info["aliases"]
-                
-                # 名称去重：如果外部频道名称已存在于本地，跳过添加（节目已关联到本地ID）
-                if ext_main_name in final_channel_name_to_id:
-                    write_log(f"外部频道名称[{ext_main_name}]已存在于本地，跳过添加（外部最终ID：{ext_final_id}）", "STEP5_FULL_NAME_DUP")
+            # 修复：遍历去重后的外部频道名称→ID，仅过滤本地同名频道
+            for ext_main_name, ext_final_id in ext_channel_name_to_final_id.items():
+                # 核心修复：仅过滤本地txt中已有的频道名称
+                if ext_main_name in local_channel_names:
+                    write_log(f"外部频道名称[{ext_main_name}]已存在于本地txt，跳过添加（外部最终ID：{ext_final_id}）", "STEP5_FULL_NAME_DUP")
                     continue
                 
                 # 确保ID不冲突（双重保障）
@@ -1025,21 +1031,28 @@ def epg_main():
                     write_log(f"外部频道最终ID[{ext_final_id}]冲突，重新生成ID（名称：{ext_main_name}）", "STEP5_FULL_ID_CONFLICT")
                     ext_final_id = generate_unique_ext_channel_id(existing_channel_ids)
                 
+                # 获取频道信息
+                channel_info = ext_final_id_to_info.get(ext_final_id)
+                if not channel_info:
+                    write_log(f"未找到外部频道ID[{ext_final_id}]的信息，跳过", "STEP5_FULL_NO_INFO")
+                    continue
+                
                 # 添加外部频道
                 channel_elem = ET.SubElement(root_full, "channel", {"id": ext_final_id})
                 ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = ext_main_name
-                for alias in ext_aliases[1:]:
+                for alias in channel_info["aliases"][1:]:
                     alias_text = alias.strip()
-                    if alias_text not in final_channel_name_to_id:
+                    # 别名也过滤本地同名
+                    if alias_text not in local_channel_names and alias_text not in final_channel_name_to_id:
                         ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = alias_text
                 
                 # 更新映射和ID集合
                 final_channel_name_to_id[ext_main_name] = ext_final_id
                 existing_channel_ids.add(ext_final_id)
                 other_channel_add_count += 1
-                write_log(f"添加外部频道：名称[{ext_main_name}]，ID[{ext_final_id}]（外部原始ID：{ext_raw_cid}）", "STEP5_FULL_ADD_EXT")
+                write_log(f"添加外部频道：名称[{ext_main_name}]，ID[{ext_final_id}]（外部原始ID：{channel_info['original_id']}）", "STEP5_FULL_ADD_EXT")
             
-            write_log(f"添加外部源其他频道：{other_channel_add_count}个（已过滤{len(all_external_channels)-other_channel_add_count}个同名频道）", "STEP5_FULL_CHANNELS")
+            write_log(f"添加外部源其他频道：{other_channel_add_count}个（过滤{len(ext_channel_name_to_final_id)-other_channel_add_count}个本地同名频道）", "STEP5_FULL_CHANNELS")
             
             # 收集所有节目（本地+外部）
             all_programs_full = []
@@ -1087,7 +1100,7 @@ def epg_main():
             print("[6/7] 压缩完整版为epg_full.xml.gz...")
             compress_xml_to_gz(config['EPG_FULL_SAVE_PATH'], config['EPG_FULL_GZ_PATH'])
         else:
-            write_log("未开启保留其他频道，跳过完整版生成", "STEP5_FULL_SKIP")
+            write_log("未开启保留其他频道或无外部频道，跳过完整版生成", "STEP5_FULL_SKIP")
 
         write_log("统计运行结果", "STEP6")
         end_time = datetime.datetime.now()
@@ -1103,7 +1116,7 @@ def epg_main():
             "精简版EPG节目数(去重)": prog_add_count_lite,
             "精简版非未知节目": non_unknown_count_lite
         }
-        if config['ENABLE_KEEP_OTHER_CHANNELS'] and all_external_channels:
+        if config['ENABLE_KEEP_OTHER_CHANNELS'] and ext_channel_name_to_final_id:
             summary["完整版EPG频道数"] = channel_add_count + temp_channel_add_count + other_channel_add_count
             summary["完整版EPG节目数(去重)"] = prog_add_count_full
             summary["完整版非未知节目"] = non_unknown_count_full
@@ -1123,6 +1136,6 @@ def epg_main():
 
 if __name__ == "__main__":
     print("="*60)
-    print("独立运行EPG生成脚本（修复外部源ID冲突，仅按名称去重）")
+    print("独立运行EPG生成脚本（修复外部源ID冲突+完整版漏加问题，仅按名称去重）")
     print("="*60)
     epg_main()

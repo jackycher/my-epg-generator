@@ -1,4 +1,4 @@
-#EXTM3U name="MY_Playlist_generator V4.1" x-tvg-url="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml" generated-time="UTC2026-01-07 01:46:44"
+#EXTM3U name="MY_Playlist_generator V4.1" x-tvg-url="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml" generated-time="UTC2026-01-07 04:23:33"
 #EXTINF:-1 channel-number="1" tvg-id="1" tvg-name="CCTV1" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/CCTV1.png" group-title="CCTV频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221225880/10000100000000060000000000025506_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",CCTV1
 rtp://239.3.1.129:8008
 #EXTINF:-1 channel-number="2" tvg-id="2" tvg-name="CCTV2" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/CCTV2.png" group-title="CCTV频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226036/10000100000000060000000000285832_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",CCTV2
@@ -203,7 +203,7 @@ rtp://239.3.1.221:8001
 #EXTINF:-1 tvg-name="平谷融媒" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/平谷融媒.png" group-title="BRTV频道",平谷融媒
 rtp://239.3.1.23:8001
 #【警告】未找到rtp://239.3.1.23:8001的时移地址
-#EXTINF:-1 channel-number="349" tvg-id="349" tvg-name="重温经典" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/重温经典.png" group-title="TS频道",重温经典
+#EXTINF:-1 channel-number="349" tvg-id="349" tvg-name="北京重温经典" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/北京重温经典.png" group-title="TS频道",北京重温经典
 rtp://239.3.1.25:8001
 #【警告】未找到rtp://239.3.1.25:8001的时移地址
 #EXTINF:-1 channel-number="372" tvg-id="372" tvg-name="红色影院" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/红色影院.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226032/10000100000000060000000000285660_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",红色影院

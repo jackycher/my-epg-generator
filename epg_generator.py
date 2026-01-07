@@ -936,26 +936,71 @@ def epg_main():
                 "generated-time": "UTC" + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             })
             
+            # 复制精简版的频道到完整版
             for channel_elem in root_lite.findall(".//channel"):
                 new_channel = ET.SubElement(root_full, "channel", {"id": channel_elem.get("id")})
                 for dn_elem in channel_elem.findall(".//display-name"):
                     ET.SubElement(new_channel, "display-name", {"lang": "zh"}).text = dn_elem.text
             
-            other_channel_add_count = 0
+            # ========== 关键修改1：构建频道名称→ID的映射，避免同名频道 ==========
+            # 收集已有的频道名称（zh语言的display-name）和对应的ID
+            channel_name_to_id = {}
+            for channel_elem in root_full.findall(".//channel"):
+                dn_elem = channel_elem.find(".//display-name[@lang='zh']")
+                if dn_elem is not None and dn_elem.text:
+                    channel_name = dn_elem.text.strip()  # 去除首尾空格，确保名称匹配准确
+                    channel_id = channel_elem.get("id")
+                    channel_name_to_id[channel_name] = channel_id  # 名称作为key，ID作为value
+            
+            # 原有ID检查保留，新增名称检查
             existing_channel_ids = set([c.get("id") for c in root_full.findall(".//channel")])
+            
+            # 遍历外部频道，校验名称唯一性
             for cid, channel_info in all_external_channels.items():
-                if cid in existing_channel_ids:
+                external_main_name = channel_info["main_name"].strip()  # 去除首尾空格
+                
+                # 优先检查名称是否已存在，存在则跳过（核心修复点）
+                if external_main_name in channel_name_to_id:
+                    write_log(f"频道名称[{external_main_name}]已存在，跳过重复添加（外部ID：{cid}）", "STEP5_FULL_DUP_SKIP")
+                    # 记录ID映射，确保外部节目关联到已有同名频道ID
+                    ext_id_mapping[cid] = channel_name_to_id[external_main_name]
                     continue
+                
+                # 名称不存在，再检查ID是否重复
+                if cid in existing_channel_ids:
+                    write_log(f"频道ID[{cid}]已存在，跳过添加（名称：{external_main_name}）", "STEP5_FULL_ID_DUP")
+                    continue
+                
+                # 名称和ID都不重复，才添加新频道
                 channel_elem = ET.SubElement(root_full, "channel", {"id": cid})
-                ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = channel_info["main_name"]
+                ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = external_main_name
                 for alias in channel_info["aliases"][1:]:
                     ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = alias
+                
+                # 更新名称映射和ID集合
+                channel_name_to_id[external_main_name] = cid
+                existing_channel_ids.add(cid)
                 other_channel_add_count += 1
-            write_log(f"添加外部源其他频道：{other_channel_add_count}个", "STEP5_FULL_CHANNELS")
+            # ========== 关键修改1 结束 ==========
             
+            write_log(f"添加外部源其他频道：{other_channel_add_count}个（已过滤{len(all_external_channels)-other_channel_add_count}个同名/同ID频道）", "STEP5_FULL_CHANNELS")
+            
+            # ========== 关键修改2：修正外部节目关联的频道ID（关联到已有同名频道） ==========
             all_programs_full = []
             all_programs_full.extend(programme_list)
-            all_programs_full.extend(all_external_programs)
+            
+            # 处理外部节目，替换为正确的频道ID（避免节目挂到重复频道）
+            for prog in all_external_programs:
+                original_cid = prog["channel"]
+                # 优先使用名称映射的ID，无则保留原ID
+                corrected_cid = ext_id_mapping.get(original_cid, original_cid)
+                all_programs_full.append({
+                    "channel": corrected_cid,
+                    "start": prog["start"],
+                    "stop": prog["stop"],
+                    "title": prog["title"]
+                })
+            # ========== 关键修改2 结束 ==========
             
             valid_progs_full = []
             for prog in all_programs_full:

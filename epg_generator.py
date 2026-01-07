@@ -3,6 +3,7 @@
 """
 EPG生成脚本（简化去重：仅按时间区间重合去重）
 核心规则：同一频道下，新节目时间区间与已有节目时间区间重合则跳过
+修复点：外部源ID与本地频道ID冲突，外部频道强制生成独立ID，仅按名称去重
 """
 import os
 import sys
@@ -117,52 +118,37 @@ EPG_CONFIG = {
 def parse_time_str_to_timestamp(time_str):
     """解析EPG时间字符串为时间戳（格式：YYYYMMDDHHMMSS +0800）"""
     try:
-        # 提取时间部分（去掉时区）
         time_part = time_str.split(' ')[0]
-        # 解析为datetime对象
         dt = datetime.datetime.strptime(time_part, "%Y%m%d%H%M%S")
-        # 转成时间戳（UTC+8，不影响区间比较）
         return dt.timestamp()
     except Exception:
         return None
 
 def is_time_overlap(new_start_ts, new_end_ts, exist_start_ts, exist_end_ts):
     """判断两个时间区间是否重合"""
-    # 核心规则：新开始 < 已有结束 且 已有开始 < 新结束 → 重合
     return new_start_ts < exist_end_ts and exist_start_ts < new_end_ts
 
 def add_program_if_no_time_overlap(programme_list, channel_time_ranges, new_prog):
-    """
-    仅当新节目与已有节目无时间重合时，才添加到列表
-    :param programme_list: 最终节目列表
-    :param channel_time_ranges: 按频道存储的时间区间字典 {channel: [(start_ts, end_ts), ...]}
-    :param new_prog: 新节目字典 {"channel": "", "start": "", "stop": "", "title": ""}
-    :return: bool - 是否添加成功
-    """
+    """仅当新节目与已有节目无时间重合时，才添加到列表"""
     channel = new_prog.get("channel")
     start_str = new_prog.get("start")
     stop_str = new_prog.get("stop")
     
-    # 校验必要字段
     if not channel or not start_str or not stop_str:
         return False
     
-    # 解析时间戳
     new_start_ts = parse_time_str_to_timestamp(start_str)
     new_end_ts = parse_time_str_to_timestamp(stop_str)
     if new_start_ts is None or new_end_ts is None:
         return False
     
-    # 初始化该频道的时间区间列表
     if channel not in channel_time_ranges:
         channel_time_ranges[channel] = []
     
-    # 检查是否与已有时间区间重合
     for (exist_start_ts, exist_end_ts) in channel_time_ranges[channel]:
         if is_time_overlap(new_start_ts, new_end_ts, exist_start_ts, exist_end_ts):
-            return False  # 时间重合，跳过
+            return False
     
-    # 无重合，添加节目并记录时间区间
     programme_list.append(new_prog)
     channel_time_ranges[channel].append((new_start_ts, new_end_ts))
     return True
@@ -469,6 +455,7 @@ def parse_external_epg(epg_data, is_official=False):
     return external_epg_map, ext_channel_identifiers, id_to_name_map, full_channel_info, full_program_info
 
 def generate_unique_ext_channel_id(existing_ids, prefix="ext_"):
+    """生成外部频道的唯一ID（确保不与本地频道ID冲突）"""
     counter = 1
     while True:
         new_id = f"{prefix}{counter}"
@@ -495,9 +482,10 @@ def epg_main():
     write_log(f"外部EPG：{'开启' if config['ENABLE_EXTERNAL_EPG'] else '关闭'}", "CONFIG")
     write_log(f"保留其他频道：{'开启' if config['ENABLE_KEEP_OTHER_CHANNELS'] else '关闭'}", "CONFIG")
     
-    all_external_channels = {}
-    all_external_programs = []
-    ext_id_mapping = {}
+    all_external_channels = {}  # 存储外部频道信息（原始ID→名称/别名）
+    all_external_programs = []  # 存储外部节目（原始ID关联）
+    ext_id_mapping = {}  # 外部原始ID → 最终频道ID（本地或新生成）
+    ext_channel_name_to_final_id = {}  # 外部频道名称 → 最终频道ID（用于名称去重）
     
     try:
         # 步骤1：读取bjcul.txt
@@ -608,7 +596,6 @@ def epg_main():
         # 步骤3：处理官方EPG
         write_log("开始处理官方EPG", "STEP3")
         programme_list = []
-        # 新增：时间区间字典（核心去重数据结构）
         channel_time_ranges = {}
         official_fail_count = 0
         channel_has_official_prog = set()
@@ -649,7 +636,6 @@ def epg_main():
                                 "stop": end_time.strftime(time_format),
                                 "title": title
                             }
-                            # 使用新的时间去重逻辑添加节目
                             if add_program_if_no_time_overlap(programme_list, channel_time_ranges, new_prog):
                                 channel_prog_count += 1
                             download_fail = False
@@ -688,14 +674,13 @@ def epg_main():
         print(f"[3/7] 官方EPG处理：{len(programme_list)} 条节目（去重后），{official_fail_count} 个需匹配外部源")
         write_log(f"官方EPG完成 - 节目{len(programme_list)}条（去重后），需外部匹配{official_fail_count}个", "STEP3")
 
-        # 步骤4：多EPG源匹配（使用新的时间去重逻辑）
+        # 步骤4：多EPG源匹配（修复外部ID冲突）
         write_log("开始多EPG源匹配", "STEP4")
         temp_local_num_prefix = "unm_"
         temp_num_counter = 1
         total_matched_by_external = 0
         pending_channels = unmatched_bjcul_channels.copy()
         
-        channel_has_official_prog = set()
         channel_has_external_single = set()
         channel_has_external_multi = set()
         
@@ -730,32 +715,47 @@ def epg_main():
                     continue
                 
                 if config['ENABLE_KEEP_OTHER_CHANNELS']:
+                    # 收集所有已存在的频道ID（本地+临时+已生成的外部ID）
                     matched_local_nums = [v['local_num'] for v in matched_channels.values()]
-                    existing_ids = set(matched_local_nums) | set([c['local_num'] for c in unmatched_bjcul_channels if c['local_num']])
-                    existing_ids.update(all_external_channels.keys())
-            
-                    for cid, channel_info in full_channel_info.items():
-                        if cid in existing_ids or cid in ext_id_mapping:
-                            if cid not in ext_id_mapping:
-                                new_id = generate_unique_ext_channel_id(existing_ids | set(ext_id_mapping.values()))
-                                ext_id_mapping[cid] = new_id
-                            use_id = ext_id_mapping[cid]
-                        else:
-                            use_id = cid
-            
-                        if use_id not in all_external_channels:
-                            all_external_channels[use_id] = {
-                                "original_id": cid,
-                                "main_name": channel_info["main_name"],
-                                "aliases": channel_info["aliases"]
-                            }
-                        existing_ids.add(use_id)
-
+                    temp_local_nums = [c['local_num'] for c in unmatched_bjcul_channels if c['local_num'] and c['local_num'].startswith(temp_local_num_prefix)]
+                    existing_ids = set(matched_local_nums + temp_local_nums + list(ext_id_mapping.values()))
+                
+                    # 处理外部频道：强制生成独立ID，仅按名称去重
+                    for ext_raw_cid, channel_info in full_channel_info.items():
+                        ext_main_name = channel_info["main_name"].strip()
+                        ext_aliases = channel_info["aliases"]
+                        
+                        # 1. 先检查名称是否已存在（本地或已添加的外部频道）
+                        if ext_main_name in ext_channel_name_to_final_id:
+                            # 名称已存在，关联到已有ID
+                            final_id = ext_channel_name_to_final_id[ext_main_name]
+                            ext_id_mapping[ext_raw_cid] = final_id
+                            write_log(f"外部频道名称[{ext_main_name}]已存在，关联到ID[{final_id}]（外部原始ID：{ext_raw_cid}）", "STEP4_NAME_DUP")
+                            continue
+                        
+                        # 2. 名称不存在，生成新的唯一ID（避免与本地冲突）
+                        new_ext_id = generate_unique_ext_channel_id(existing_ids)
+                        ext_id_mapping[ext_raw_cid] = new_ext_id
+                        ext_channel_name_to_final_id[ext_main_name] = new_ext_id
+                        existing_ids.add(new_ext_id)
+                        
+                        # 3. 存储外部频道信息
+                        all_external_channels[ext_raw_cid] = {
+                            "original_id": ext_raw_cid,
+                            "final_id": new_ext_id,
+                            "main_name": ext_main_name,
+                            "aliases": ext_aliases
+                        }
+                        write_log(f"新增外部频道：名称[{ext_main_name}]，生成独立ID[{new_ext_id}]（外部原始ID：{ext_raw_cid}）", "STEP4_NEW_EXT_CHANNEL")
+                
+                    # 处理外部节目：关联到最终ID（本地或新生成的外部ID）
                     for prog in full_program_info:
-                        original_cid = prog["channel_id"]
-                        use_cid = ext_id_mapping.get(original_cid, original_cid)
+                        ext_raw_cid = prog["channel_id"]
+                        final_cid = ext_id_mapping.get(ext_raw_cid, None)
+                        if not final_cid:
+                            continue  # 未找到有效ID，跳过
                         all_external_programs.append({
-                            "channel": use_cid,
+                            "channel": final_cid,
                             "start": prog["start"],
                             "stop": prog["stop"],
                             "title": prog["title"]
@@ -804,7 +804,6 @@ def epg_main():
                                     "stop": prog["stop"],
                                     "title": prog["title"]
                                 }
-                                # 使用新的时间去重逻辑添加节目
                                 if add_program_if_no_time_overlap(programme_list, channel_time_ranges, new_prog):
                                     new_prog_count += 1
                             if new_prog_count > 0:
@@ -834,7 +833,6 @@ def epg_main():
                                         "stop": prog["stop"],
                                         "title": prog["title"]
                                     }
-                                    # 使用新的时间去重逻辑添加节目
                                     if add_program_if_no_time_overlap(programme_list, channel_time_ranges, new_prog):
                                         new_prog_count += 1
                                 if new_prog_count > 0:
@@ -863,7 +861,7 @@ def epg_main():
         print(f"[5/7] 多源匹配完成：总计{total_matched_by_external}个，剩余{total_unmatched_final}个未匹配")
         write_log(f"多源匹配汇总 - 成功{total_matched_by_external}个，未匹配{total_unmatched_final}个", "STEP4_FINAL_SUMMARY")
 
-        # 步骤5：生成XML
+        # 步骤5：生成XML（修复外部ID冲突）
         write_log("开始生成精简版EPG XML", "STEP5_LITE")
         root_lite = ET.Element("tv", {
             "generator-info-name": "MY EPG Generator v4.1 (Lite)",
@@ -872,22 +870,26 @@ def epg_main():
         })
         
         channel_add_count = 0
+        # 收集本地频道名称→ID映射（用于完整版名称去重）
+        local_channel_name_to_id = {}
         for channel_code in matched_channels.keys():
             channel_info = matched_channels[channel_code]
             local_num = channel_info["local_num"]
-            raw_name = channel_info["raw_name"]
+            raw_name = channel_info["raw_name"].strip()
             channel_elem = ET.SubElement(root_lite, "channel", {"id": local_num})
             ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = raw_name
             channel_add_count += 1
+            local_channel_name_to_id[raw_name] = local_num  # 本地名称→ID映射
         
         temp_channel_add_count = 0
         for channel in unmatched_bjcul_channels:
             if channel["local_num"] and channel["local_num"].startswith(temp_local_num_prefix):
                 local_num = channel["local_num"]
-                raw_name = channel["raw_name"]
+                raw_name = channel["raw_name"].strip()
                 channel_elem = ET.SubElement(root_lite, "channel", {"id": local_num})
                 ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = raw_name
                 temp_channel_add_count += 1
+                local_channel_name_to_id[raw_name] = local_num  # 临时频道名称→ID映射
         
         seen_progs_lite = set()
         sorted_progs_lite = sorted(programme_list, key=lambda x: (x["channel"], x["start"]))
@@ -940,75 +942,59 @@ def epg_main():
             for channel_elem in root_lite.findall(".//channel"):
                 new_channel = ET.SubElement(root_full, "channel", {"id": channel_elem.get("id")})
                 for dn_elem in channel_elem.findall(".//display-name"):
-                    ET.SubElement(new_channel, "display-name", {"lang": "zh"}).text = dn_elem.text
+                    dn_text = dn_elem.text.strip()
+                    ET.SubElement(new_channel, "display-name", {"lang": "zh"}).text = dn_text
             
-            # ========== 关键修改1：构建频道名称→ID的映射，避免同名频道 ==========
-            # 收集已有的频道名称（zh语言的display-name）和对应的ID
-            channel_name_to_id = {}
-            for channel_elem in root_full.findall(".//channel"):
-                dn_elem = channel_elem.find(".//display-name[@lang='zh']")
-                if dn_elem is not None and dn_elem.text:
-                    channel_name = dn_elem.text.strip()  # 去除首尾空格，确保名称匹配准确
-                    channel_id = channel_elem.get("id")
-                    channel_name_to_id[channel_name] = channel_id  # 名称作为key，ID作为value
-            
-            # 原有ID检查保留，新增名称检查
+            # 合并本地+外部的名称→ID映射（用于最终名称去重）
+            final_channel_name_to_id = local_channel_name_to_id.copy()
             existing_channel_ids = set([c.get("id") for c in root_full.findall(".//channel")])
             
-            # 遍历外部频道，校验名称唯一性
-            for cid, channel_info in all_external_channels.items():
-                external_main_name = channel_info["main_name"].strip()  # 去除首尾空格
+            # 添加外部频道：仅名称不重复时添加，使用生成的独立ID
+            for ext_raw_cid, channel_info in all_external_channels.items():
+                ext_main_name = channel_info["main_name"].strip()
+                ext_final_id = channel_info["final_id"]
+                ext_aliases = channel_info["aliases"]
                 
-                # 优先检查名称是否已存在，存在则跳过（核心修复点）
-                if external_main_name in channel_name_to_id:
-                    write_log(f"频道名称[{external_main_name}]已存在，跳过重复添加（外部ID：{cid}）", "STEP5_FULL_DUP_SKIP")
-                    # 记录ID映射，确保外部节目关联到已有同名频道ID
-                    ext_id_mapping[cid] = channel_name_to_id[external_main_name]
+                # 名称去重：如果外部频道名称已存在于本地，跳过添加（节目已关联到本地ID）
+                if ext_main_name in final_channel_name_to_id:
+                    write_log(f"外部频道名称[{ext_main_name}]已存在于本地，跳过添加（外部最终ID：{ext_final_id}）", "STEP5_FULL_NAME_DUP")
                     continue
                 
-                # 名称不存在，再检查ID是否重复
-                if cid in existing_channel_ids:
-                    write_log(f"频道ID[{cid}]已存在，跳过添加（名称：{external_main_name}）", "STEP5_FULL_ID_DUP")
-                    continue
+                # 确保ID不冲突（双重保障）
+                if ext_final_id in existing_channel_ids:
+                    write_log(f"外部频道最终ID[{ext_final_id}]冲突，重新生成ID（名称：{ext_main_name}）", "STEP5_FULL_ID_CONFLICT")
+                    ext_final_id = generate_unique_ext_channel_id(existing_channel_ids)
                 
-                # 名称和ID都不重复，才添加新频道
-                channel_elem = ET.SubElement(root_full, "channel", {"id": cid})
-                ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = external_main_name
-                for alias in channel_info["aliases"][1:]:
-                    ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = alias
+                # 添加外部频道
+                channel_elem = ET.SubElement(root_full, "channel", {"id": ext_final_id})
+                ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = ext_main_name
+                for alias in ext_aliases[1:]:
+                    alias_text = alias.strip()
+                    if alias_text not in final_channel_name_to_id:
+                        ET.SubElement(channel_elem, "display-name", {"lang": "zh"}).text = alias_text
                 
-                # 更新名称映射和ID集合
-                channel_name_to_id[external_main_name] = cid
-                existing_channel_ids.add(cid)
+                # 更新映射和ID集合
+                final_channel_name_to_id[ext_main_name] = ext_final_id
+                existing_channel_ids.add(ext_final_id)
                 other_channel_add_count += 1
-            # ========== 关键修改1 结束 ==========
+                write_log(f"添加外部频道：名称[{ext_main_name}]，ID[{ext_final_id}]（外部原始ID：{ext_raw_cid}）", "STEP5_FULL_ADD_EXT")
             
-            write_log(f"添加外部源其他频道：{other_channel_add_count}个（已过滤{len(all_external_channels)-other_channel_add_count}个同名/同ID频道）", "STEP5_FULL_CHANNELS")
+            write_log(f"添加外部源其他频道：{other_channel_add_count}个（已过滤{len(all_external_channels)-other_channel_add_count}个同名频道）", "STEP5_FULL_CHANNELS")
             
-            # ========== 关键修改2：修正外部节目关联的频道ID（关联到已有同名频道） ==========
+            # 收集所有节目（本地+外部）
             all_programs_full = []
             all_programs_full.extend(programme_list)
+            all_programs_full.extend(all_external_programs)
             
-            # 处理外部节目，替换为正确的频道ID（避免节目挂到重复频道）
-            for prog in all_external_programs:
-                original_cid = prog["channel"]
-                # 优先使用名称映射的ID，无则保留原ID
-                corrected_cid = ext_id_mapping.get(original_cid, original_cid)
-                all_programs_full.append({
-                    "channel": corrected_cid,
-                    "start": prog["start"],
-                    "stop": prog["stop"],
-                    "title": prog["title"]
-                })
-            # ========== 关键修改2 结束 ==========
-            
+            # 过滤有效节目并排序
             valid_progs_full = []
             for prog in all_programs_full:
-                if isinstance(prog, dict) and "channel" in prog and "start" in prog and "title" in prog:
+                if isinstance(prog, dict) and "channel" in prog and "start" in prog and "title" in prog and prog["channel"] in existing_channel_ids:
                     valid_progs_full.append(prog)
             
             sorted_progs_full = sorted(valid_progs_full, key=lambda x: (x["channel"], x["start"]))
             
+            # 去重并添加节目
             seen_progs_full = set()
             for prog in sorted_progs_full:
                 if not prog.get("channel") or not prog.get("start") or not prog.get("title"):
@@ -1077,6 +1063,6 @@ def epg_main():
 
 if __name__ == "__main__":
     print("="*60)
-    print("独立运行EPG生成脚本（简化去重：仅按时间区间重合去重）")
+    print("独立运行EPG生成脚本（修复外部源ID冲突，仅按名称去重）")
     print("="*60)
     epg_main()

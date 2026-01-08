@@ -3,6 +3,7 @@
  * 路径：/functions/diyp_epg.js
  * 访问：https://你的域名/diyp_epg?ch=CHC影迷电影&date=20260105&debug=1
  * 修复点：1. 兼容XML标签闭合/空格 2. 增强display-name提取 3. 完善调试信息
+ * 新增：debug信息中加入服务器时间、时区信息
  */
 
 const CONFIG = {
@@ -65,10 +66,20 @@ function parseEpgTime(timeStr) {
 /**
  * 4. 纯正则解析 XML（替代 DOMParser，适配 Cloudflare 环境）
  * 优化：1. 兼容XML标签空格/闭合 2. 增强display-name提取 3. 完善调试信息
+ * 新增：debugInfo中加入服务器时间、时区信息
  */
 function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
+  // ========== 关键修改：新增服务器时间/时区信息 ==========
+  const now = new Date();
   const debugInfo = {
     target: { channel: targetChannel, date: targetDate },
+    // 新增服务器时间相关字段
+    serverTime: {
+      iso: now.toISOString(), // ISO标准时间（UTC）
+      local: now.toLocaleString('zh-CN'), // 服务器本地时间（中文格式）
+      timezoneOffset: now.getTimezoneOffset(), // 时区偏移（分钟），负数表示UTC+N
+      timezoneDesc: `UTC${-now.getTimezoneOffset()/60}` // 易读的时区描述，如UTC+8
+    },
     xmlChannels: [],
     allChannelNames: [], // 新增：所有频道的cleanName列表（方便排查）
     matchedChannel: null,

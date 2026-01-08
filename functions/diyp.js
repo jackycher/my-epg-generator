@@ -260,7 +260,7 @@ export async function onRequest(context) {
     if (isDebug || !cachedResponse) {
       const xmlResponse = await fetch(CONFIG.EPG_XML_URL, {
         headers: { "User-Agent": "Cloudflare EPG Fetcher" },
-        cf: { cacheTtl: isDebug ? 60 : 86400 } // 调试模式缓存1分钟，正常模式24小时
+        cf: { cacheTtl: isDebug ? 60 : 3600 } // 调试模式缓存1分钟，正常模式1小时
       });
 
       if (!xmlResponse.ok) {

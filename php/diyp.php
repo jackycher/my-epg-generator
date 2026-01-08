@@ -5,6 +5,9 @@
  * 访问：https://你的域名/diyp_epg.php?ch=CHC影迷电影&date=20260105&debug=1
  */
 
+// ========== 新增：设置默认时区为北京时间 ==========
+date_default_timezone_set('Asia/Shanghai');
+
 // 开启输出缓冲（解决头信息已发送问题）
 ob_start();
 
@@ -62,7 +65,7 @@ function getFormatDate($dateStr) {
 }
 
 /**
- * 4. 解析EPG时间（修正substr参数）
+ * 4. 解析EPG时间（修正substr参数+时区）
  */
 function parseEpgTime($timeStr) {
     if (empty($timeStr)) return null;
@@ -75,7 +78,9 @@ function parseEpgTime($timeStr) {
     $hour = substr($cleanTime, 8, 2);
     $min = substr($cleanTime, 10, 2);
     try {
-        return new DateTime("$year-$month-$day $hour:$min:00");
+        // ========== 修改：创建DateTime时指定北京时间时区 ==========
+        $datetime = new DateTime("$year-$month-$day $hour:$min:00", new DateTimeZone('Asia/Shanghai'));
+        return $datetime;
     } catch (Exception $e) {
         return null;
     }
@@ -87,6 +92,8 @@ function parseEpgTime($timeStr) {
 function parseEpgXml($xmlStr, $targetChannel, $targetDate, $debug = false) {
     $debugInfo = [
         'target' => ['channel' => $targetChannel, 'date' => $targetDate],
+        // ========== 新增：调试信息中添加服务器当前时间 ==========
+        'server_time' => date('Y-m-d H:i:s'),
         'matchedChannel' => null,
         'matchedProgrammes' => [],
         'error' => null
@@ -156,7 +163,8 @@ function parseEpgXml($xmlStr, $targetChannel, $targetDate, $debug = false) {
         $debugInfo['matchedChannel'] = $matchedChannel;
 
         // 提取节目
-        $targetDateObj = new DateTime($targetDate);
+        // ========== 修改：创建日期对象时指定北京时间时区 ==========
+        $targetDateObj = new DateTime($targetDate, new DateTimeZone('Asia/Shanghai'));
         $nextDateObj = clone $targetDateObj;
         $nextDateObj->modify('+1 day');
 

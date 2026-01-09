@@ -40,7 +40,7 @@ EPG_CONFIG = {
     'CACHE_DIR': "./epg_cache",
     'CACHE_TIMEOUT': 30,
     'CACHE_RETRY_TIMES': 2,
-    'KEEP_4K_NAMES': ["CCTV4K", "CCTV4k", "爱上4K"],
+    'KEEP_4K_NAMES': ["CCTV4K", "爱上4K","4K超清"],
     'CLEAN_SUFFIX': ["4k", "4K", "SDR", "HDR", "超高清", "英语", "英文"],
     'TIMEOUT': 30,
     'RETRY_TIMES': 2,

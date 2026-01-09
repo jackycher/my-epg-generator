@@ -94,7 +94,15 @@ function parseEpgTime(timeStr) {
   return isNaN(epgDate.getTime()) ? null : epgDate;
 }
 
-
+// 修正后：强制获取UTC+8对应的时间（适配EPG时区，避免格式化偏差）
+function formatTimeToUTC8(dateObj) {
+  if (!dateObj) return "00:00";
+  // 获取UTC时间，再手动加上8小时偏移，得到UTC+8的准确时间
+  const utcHour = dateObj.getUTCHours();
+  const utcMin = dateObj.getUTCMinutes();
+  const targetHour = (utcHour + 8) % 24; // 处理跨天情况（如UTC 23:00 → UTC+8 07:00）
+  return `${targetHour.toString().padStart(2, "0")}:${utcMin.toString().padStart(2, "0")}`;
+}
 
 /**
  * 4. 纯正则解析 XML（替代 DOMParser，适配 Cloudflare 环境）
@@ -333,9 +341,18 @@ export async function onRequest(context) {
         date: targetDate,
         url: CONFIG.DEFAULT_URL,
         icon: `${CONFIG.ICON_BASE_URL}${encodeURIComponent(cleanChannel)}.png`,
+/*
         epg_data: parseResult.matchedProgrammes.map(prog => ({
           start: prog.start.toTimeString().slice(0, 5),
           end: prog.stop.toTimeString().slice(0, 5),
+          title: prog.title,
+          desc: prog.desc
+        }))
+*/
+        // 调用修正后的格式化函数
+        epg_data: parseResult.matchedProgrammes.map(prog => ({
+          start: formatTimeToUTC8(prog.start),
+          end: formatTimeToUTC8(prog.stop),
           title: prog.title,
           desc: prog.desc
         }))

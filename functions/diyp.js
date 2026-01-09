@@ -261,7 +261,7 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
       const channelWithSimilarity = channels.map(chan => ({
         ...chan,
         similarity: getStringSimilarity(chan.cleanName, cleanTarget)
-      })).filter(chan => chan.similarity >= 0.3);
+      })).filter(chan => chan.similarity >= 0.5);
       
       if (channelWithSimilarity.length > 0) {
         channelWithSimilarity.sort((a, b) => b.similarity - a.similarity);

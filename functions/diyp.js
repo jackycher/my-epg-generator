@@ -139,6 +139,7 @@ function getUTC8DateRange(targetDateStr) {
  * 优化：1. 兼容XML标签空格/闭合 2. 增强display-name提取 3. 完善调试信息
  * 新增：debugInfo中加入服务器时间、时区信息
  */
+
 function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
   // ========== 关键修改：新增服务器时间/时区信息 ==========
   const now = new Date();

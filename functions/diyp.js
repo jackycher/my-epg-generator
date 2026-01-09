@@ -54,6 +54,7 @@ function getFormatDate(dateStr) {
 /**
  * 3. 解析 EPG 时间（YYYYMMDDHHMMSS +0800 → Date 对象）
  */
+/*
 function parseEpgTime(timeStr) {
   if (!timeStr) return null;
   const cleanTime = timeStr.split(" ")[0]; // 提取 YYYYMMDDHHMMSS
@@ -62,6 +63,29 @@ function parseEpgTime(timeStr) {
   const hour = cleanTime.slice(8,10), min = cleanTime.slice(10,12);
   return new Date(`${year}-${month}-${day}T${hour}:${min}:00`);
 }
+ */
+// 修复时区处理
+function parseEpgTime(timeStr) {
+  if (!timeStr) return null;
+  // 拆分时间部分和时区部分
+  const [cleanTime, timezone] = timeStr.split(" ");
+  if (cleanTime.length !== 14) return null;
+  const year = cleanTime.slice(0,4), month = cleanTime.slice(4,6), day = cleanTime.slice(6,8);
+  const hour = cleanTime.slice(8,10), min = cleanTime.slice(10,12);
+  
+  // 处理 UTC+8 时区（兼容 +0800 标识）
+  const targetTimezone = timezone || "+0800";
+  if (targetTimezone === "+0800") {
+    // 先创建 UTC 时间，再加上 8 小时偏移量
+    const utcDate = new Date(Date.UTC(year, month - 1, day, hour, min, 0));
+    utcDate.setHours(utcDate.getHours() + 8);
+    return utcDate;
+  }
+  
+  // 兼容其他时区（可选）
+  return new Date(`${year}-${month}-${day}T${hour}:${min}:00${targetTimezone}`);
+}
+
 
 /**
  * 4. 纯正则解析 XML（替代 DOMParser，适配 Cloudflare 环境）

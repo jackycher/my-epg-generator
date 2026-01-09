@@ -370,7 +370,7 @@ export async function onRequest(context) {
       xmlStr = await xmlResponse.text();
       await cache.put(CONFIG.EPG_XML_URL, new Response(xmlStr, {
         headers: {
-          "Cache-Control": `max-age=${isDebug ? 60 : 86400}`,
+          "Cache-Control": `max-age=${isDebug ? 60 : 3600}`,
           "Content-Type": "application/xml; charset=utf-8"
         }
       }));

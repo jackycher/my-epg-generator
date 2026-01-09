@@ -150,6 +150,14 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
       local: now.toLocaleString('zh-CN'), // 服务器本地时间（中文格式）
       timezoneOffset: now.getTimezoneOffset(), // 时区偏移（分钟），负数表示UTC+N
       timezoneDesc: `UTC${-now.getTimezoneOffset()/60}` // 易读的时区描述，如UTC+8
+      // ========== 新增：UTC+8 时区的本地时间（适配 EPG 排查） ==========
+    utc8Local: {
+        // UTC+8 易读格式（中文日期时间，如 2026/1/9 10:18:30）
+        readable: new Date(now.getTime() + 8 * 3600 * 1000).toLocaleString('zh-CN'),
+        // UTC+8 ISO 格式（带时区标识，如 2026-01-09T10:18:30.360+08:00）
+        iso: new Date(now.getTime() + 8 * 3600 * 1000).toISOString().replace('Z', '+08:00'),
+        desc: "UTC+8（中国标准时区，适配 EPG 数据）"
+      }
     },
     xmlChannels: [],
     allChannelNames: [], // 新增：所有频道的cleanName列表（方便排查）

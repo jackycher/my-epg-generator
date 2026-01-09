@@ -152,7 +152,7 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
       timezoneOffset: now.getTimezoneOffset(), // 时区偏移（分钟），负数表示UTC+N
       timezoneDesc: `UTC${-now.getTimezoneOffset()/60}` // 易读的时区描述，如UTC+8
       // ========== 新增：UTC+8 时区的本地时间（适配 EPG 排查） ==========
-    utc8Local: {
+      utc8Local: {
         // UTC+8 易读格式（中文日期时间，如 2026/1/9 10:18:30）
         readable: new Date(now.getTime() + 8 * 3600 * 1000).toLocaleString('zh-CN'),
         // UTC+8 ISO 格式（带时区标识，如 2026-01-09T10:18:30.360+08:00）

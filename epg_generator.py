@@ -832,6 +832,8 @@ def epg_main():
                         })
                 
                 matched_in_this_source = 0
+                # ========== 新增：初始化当前源未匹配频道列表 ==========
+                source_unmatched_channels = []  # 存储当前源完全未匹配的频道
                 next_pending_channels = []
                 
                 for channel in pending_channels:
@@ -914,6 +916,9 @@ def epg_main():
                                         channel_has_external_multi.add(local_num)
                                     write_log(f"{raw_name}({local_num})从{source_name}补充{new_prog_count}条节目（去重后）", "STEP4_MATCH_SUCCESS")
                                     channel_matched = True
+                        else:
+                            # ========== 新增：当前源未匹配，加入未匹配列表 ==========
+                            source_unmatched_channels.append(channel)
                     
                     if not is_exclude_multi:
                         next_pending_channels.append(channel)
@@ -926,6 +931,23 @@ def epg_main():
                 pending_channels = next_pending_channels
                 write_log(f"{source_name}匹配完成 - 补充{matched_in_this_source}个频道的节目，剩余{len(pending_channels)}个待补充", "STEP4_SOURCE_SUMMARY")
                 print(f"  → 源{source_idx+1}补充{matched_in_this_source}个频道的节目，剩余{len(pending_channels)}个待补充")
+
+                # ========== 新增：输出当前源未匹配频道列表 ==========
+                if len(source_unmatched_channels) > 0:
+                    write_log(f"=== 源{source_idx+1}完全未匹配频道明细（共{len(source_unmatched_channels)}个）===", "STEP4_SOURCE_UNMATCHED")
+                    for idx, unmatch_channel in enumerate(source_unmatched_channels, 1):
+                        raw_name = unmatch_channel.get("raw_name", "未知名称")
+                        category = unmatch_channel.get("category", "未知分类")
+                        local_num = unmatch_channel.get("local_num", "无本地ID")
+                        log_content = f"[{idx}] 名称：{raw_name} | 分类：{category} | 本地ID：{local_num}"
+                        write_log(log_content, "STEP4_UNMATCHED_ITEM")
+                    write_log("=== 未匹配频道明细结束 ===", "STEP4_SOURCE_UNMATCHED")
+    
+                    # 控制台输出简洁版（前20个）
+                    unmatch_names = [c.get("raw_name", "未知") for c in source_unmatched_channels]
+                    print(f"  → 源{source_idx+1}完全未匹配频道：{unmatch_names[:20]}{'...' if len(unmatch_names) > 20 else ''}")
+                else:
+                    print(f"  → 源{source_idx+1}无完全未匹配频道")
 
         total_unmatched_final = len(pending_channels)
         print(f"[5/7] 多源匹配完成：总计{total_matched_by_external}个，剩余{total_unmatched_final}个未匹配")

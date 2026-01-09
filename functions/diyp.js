@@ -64,27 +64,36 @@ function parseEpgTime(timeStr) {
   return new Date(`${year}-${month}-${day}T${hour}:${min}:00`);
 }
  */
-// 修复时区处理
+/**
+ * 修正版：精准解析 EPG 时间（YYYYMMDDHHMMSS +0800 → Date 对象）
+ * 核心：不重复计算UTC+8偏移，直接解析带时区标识的时间，避免时间错乱
+ */
 function parseEpgTime(timeStr) {
   if (!timeStr) return null;
-  // 拆分时间部分和时区部分
-  const [cleanTime, timezone] = timeStr.split(" ");
+  
+  // 步骤1：拆分时间部分（YYYYMMDDHHMMSS）和时区部分（+0800，默认值兜底）
+  const [cleanTime, timezone = "+0800"] = timeStr.split(" ");
   if (cleanTime.length !== 14) return null;
-  const year = cleanTime.slice(0,4), month = cleanTime.slice(4,6), day = cleanTime.slice(6,8);
-  const hour = cleanTime.slice(8,10), min = cleanTime.slice(10,12);
   
-  // 处理 UTC+8 时区（兼容 +0800 标识）
-  const targetTimezone = timezone || "+0800";
-  if (targetTimezone === "+0800") {
-    // 先创建 UTC 时间，再加上 8 小时偏移量
-    const utcDate = new Date(Date.UTC(year, month - 1, day, hour, min, 0));
-    utcDate.setHours(utcDate.getHours() + 8);
-    return utcDate;
-  }
+  // 步骤2：提取年月日时分秒，拼接成 JS 可解析的时间格式
+  const year = cleanTime.slice(0, 4);
+  const month = cleanTime.slice(4, 6); // 月份（1-12，无需减1，后续拼接后JS会自动解析）
+  const day = cleanTime.slice(6, 8);
+  const hour = cleanTime.slice(8, 10);
+  const min = cleanTime.slice(10, 12);
+  const sec = "00"; // EPG无秒数，默认补0
   
-  // 兼容其他时区（可选）
-  return new Date(`${year}-${month}-${day}T${hour}:${min}:00${targetTimezone}`);
+  // 步骤3：关键！拼接带标准时区格式的字符串（+0800 → +08:00，提升JS解析兼容性）
+  const timezoneFormatted = `${timezone.slice(0, 3)}:${timezone.slice(3)}`; // +0800 → +08:00
+  const parsableTimeStr = `${year}-${month}-${day}T${hour}:${min}:${sec}${timezoneFormatted}`;
+  
+  // 步骤4：直接解析带时区的字符串，不额外偏移，得到准确的Date对象
+  const epgDate = new Date(parsableTimeStr);
+  
+  // 步骤5：验证解析结果（避免无效时间）
+  return isNaN(epgDate.getTime()) ? null : epgDate;
 }
+
 
 
 /**

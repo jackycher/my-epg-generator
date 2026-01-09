@@ -3,7 +3,7 @@
  * 路径：/functions/diyp_epg.js
  * 访问：https://你的域名/diyp_epg?ch=CHC影迷电影&date=20260105&debug=1
  * 修复点：1. 兼容XML标签闭合/空格 2. 增强display-name提取 3. 完善调试信息
- * 新增：debug信息中加入服务器时间、时区信息
+ * 新增：debug信息中加入服务器时间、时区信息 + 别名匹配标注
  */
 
 const CONFIG = {
@@ -36,10 +36,20 @@ function cleanChannelName(channelName) {
     .replace(/[\u200B-\u200D\uFEFF]/g, ""); // 移除零宽空格等不可见字符
 }
 
-// 在cleanChannel之后，新增别名映射逻辑
+// 优化：返回复合结果，包含「目标频道名」和「是否别名匹配」标识，方便debug标注
 function getTargetChannelName(originalChannel) {
   const cleanName = cleanChannelName(originalChannel);
-  return CHANNEL_ALIAS_MAP[cleanName] || cleanName;
+  // 判断是否命中别名映射
+  const isAliasMatch = CHANNEL_ALIAS_MAP.hasOwnProperty(cleanName);
+  const targetName = isAliasMatch ? CHANNEL_ALIAS_MAP[cleanName] : cleanName;
+  
+  // 返回复合对象，保留debug所需的映射信息
+  return {
+    cleanOriginalName: cleanName, // 原始清理后的查询名
+    targetChannelName: targetName, // 最终目标频道名（别名映射后/原清理名）
+    isAliasMatch: isAliasMatch, // 是否是别名匹配
+    aliasMapping: isAliasMatch ? { [cleanName]: targetName } : null // 别名映射详情（仅匹配时返回）
+  };
 }
 
 /**
@@ -101,7 +111,6 @@ function getStringSimilarity(str1, str2) {
   return totalScore;
 }
 
-
 /**
  * 2. 格式化日期（YYYY-MM-DD）
  */
@@ -112,19 +121,6 @@ function getFormatDate(dateStr) {
   return `${numDate.slice(0,4)}-${numDate.slice(4,6)}-${numDate.slice(6,8)}`;
 }
 
-/**
- * 3. 解析 EPG 时间（YYYYMMDDHHMMSS +0800 → Date 对象）
- */
-/*
-function parseEpgTime(timeStr) {
-  if (!timeStr) return null;
-  const cleanTime = timeStr.split(" ")[0]; // 提取 YYYYMMDDHHMMSS
-  if (cleanTime.length !== 14) return null;
-  const year = cleanTime.slice(0,4), month = cleanTime.slice(4,6), day = cleanTime.slice(6,8);
-  const hour = cleanTime.slice(8,10), min = cleanTime.slice(10,12);
-  return new Date(`${year}-${month}-${day}T${hour}:${min}:00`);
-}
- */
 /**
  * 修正版：精准解析 EPG 时间（YYYYMMDDHHMMSS +0800 → Date 对象）
  * 核心：不重复计算UTC+8偏移，直接解析带时区标识的时间，避免时间错乱
@@ -194,26 +190,37 @@ function getUTC8DateRange(targetDateStr) {
   };
 }
 
-
 /**
  * 4. 纯正则解析 XML（替代 DOMParser，适配 Cloudflare 环境）
- * 优化：1. 兼容XML标签空格/闭合 2. 增强display-name提取 3. 完善调试信息
- * 新增：debugInfo中加入服务器时间、时区信息
+ * 优化：1. 兼容XML标签空格/闭合 2. 增强display-name提取 3. 完善调试信息 + 别名匹配标注
  */
-
-function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
-  // ========== 关键修改：新增服务器时间/时区信息 ==========
+function parseEpgXml(xmlStr, channelMatchResult, targetDate, debug = false) {
+  // 解构频道匹配结果（包含别名信息）
+  const {
+    cleanOriginalName,
+    targetChannelName,
+    isAliasMatch,
+    aliasMapping
+  } = channelMatchResult;
+  
+  // ========== 关键修改：新增服务器时间/时区信息 + 别名匹配信息 ==========
   const now = new Date();
   const debugInfo = {
-    target: { channel: targetChannel, date: targetDate },
+    target: { 
+      channel: cleanOriginalName, // 原始清理后的查询频道
+      targetChannel: targetChannelName, // 最终匹配的目标频道
+      date: targetDate,
+      isAliasMatch: isAliasMatch, // 标注是否使用别名匹配
+      aliasMapping: aliasMapping // 别名映射详情（仅匹配时返回）
+    },
     // 新增服务器时间相关字段
     serverTime: {
       iso: now.toISOString(), // ISO标准时间（UTC）
       local: now.toLocaleString('zh-CN'), // 服务器本地时间（中文格式）
       timezoneOffset: now.getTimezoneOffset(), // 时区偏移（分钟），负数表示UTC+N
-      timezoneDesc: `UTC${-now.getTimezoneOffset()/60}` ,// 易读的时区描述，如UTC+8
+      timezoneDesc: `UTC${-now.getTimezoneOffset()/60}`,// 易读的时区描述，如UTC+8
       // ========== 新增：UTC+8 时区的本地时间（适配 EPG 排查） ==========
-    utc8Local: {
+      utc8Local: {
         // UTC+8 易读格式（中文日期时间，如 2026/1/9 10:18:30）
         readable: new Date(now.getTime() + 8 * 3600 * 1000).toLocaleString('zh-CN'),
         // UTC+8 ISO 格式（带时区标识，如 2026-01-09T10:18:30.360+08:00）
@@ -256,30 +263,41 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
     debugInfo.xmlChannels = channels;
     debugInfo.allChannelNames = channels.map(chan => chan.cleanName); // 保存所有频道名
 
-    // ========== 步骤2：匹配目标频道（优化容错性） ==========
-    const cleanTarget = cleanChannelName(targetChannel); // 二次清理目标值
+    // ========== 步骤2：匹配目标频道（优化容错性，添加匹配类型标注） ==========
     let matchedChannel = null;
+    let matchType = "未匹配"; // 新增：标注匹配类型
 
-    // 步骤2.1：精确匹配（去除不可见字符后）
-    matchedChannel = channels.find(chan => chan.cleanName === cleanTarget);
-
-    // 步骤2.2：双向模糊匹配
-    if (!matchedChannel) {
-      matchedChannel = channels.find(chan => 
-        chan.cleanName.includes(cleanTarget) || cleanTarget.includes(chan.cleanName)
-      );
+    // 步骤2.1：别名匹配（优先标注，已通过外部映射）
+    if (isAliasMatch) {
+      matchedChannel = channels.find(chan => chan.cleanName === targetChannelName);
+      if (matchedChannel) matchType = "别名匹配";
     }
 
-    // 步骤2.3：相似度匹配
+    // 步骤2.2：精确匹配（去除不可见字符后）
+    if (!matchedChannel) {
+      matchedChannel = channels.find(chan => chan.cleanName === targetChannelName);
+      if (matchedChannel) matchType = "精确匹配";
+    }
+
+    // 步骤2.3：双向模糊匹配
+    if (!matchedChannel) {
+      matchedChannel = channels.find(chan => 
+        chan.cleanName.includes(targetChannelName) || targetChannelName.includes(chan.cleanName)
+      );
+      if (matchedChannel) matchType = "双向模糊匹配";
+    }
+
+    // 步骤2.4：相似度匹配
     if (!matchedChannel) {
       const channelWithSimilarity = channels.map(chan => ({
         ...chan,
-        similarity: getStringSimilarity(chan.cleanName, cleanTarget)
+        similarity: getStringSimilarity(chan.cleanName, targetChannelName)
       })).filter(chan => chan.similarity >= 0.5);
       
       if (channelWithSimilarity.length > 0) {
         channelWithSimilarity.sort((a, b) => b.similarity - a.similarity);
         matchedChannel = channelWithSimilarity[0];
+        matchType = "相似度匹配";
         debugInfo.similarityMatch = {
           matchedChannel: matchedChannel,
           similarity: matchedChannel.similarity,
@@ -288,29 +306,27 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
       }
     }
 
-    // 步骤2.4：前缀匹配
-    if (!matchedChannel && cleanTarget.length >= 2) {
-      const prefix = cleanTarget.slice(0, 3);
+    // 步骤2.5：前缀匹配
+    if (!matchedChannel && targetChannelName.length >= 2) {
+      const prefix = targetChannelName.slice(0, 3);
       matchedChannel = channels.find(chan => chan.cleanName.startsWith(prefix));
+      if (matchedChannel) matchType = "前缀匹配";
     }
 
     if (!matchedChannel) {
-      debugInfo.error = `未找到匹配的频道（目标：${cleanTarget}，所有频道数：${channels.length}）`;
+      debugInfo.error = `未找到匹配的频道（目标：${targetChannelName}，原始查询：${cleanOriginalName}，所有频道数：${channels.length}）`;
       return debugInfo;
     }
-    debugInfo.matchedChannel = matchedChannel;
+
+    // ========== 关键：给匹配到的频道添加「匹配类型」标注 ==========
+    debugInfo.matchedChannel = {
+      ...matchedChannel,
+      matchType: matchType, // 明确标注匹配类型（别名匹配/精确匹配等）
+      originalQuery: cleanOriginalName, // 原始清理后的查询名
+      targetChannel: targetChannelName // 最终目标频道名
+    };
 
     // ========== 步骤3：提取该频道的所有节目 ==========
-    //const targetDateObj = new Date(targetDate);
-    //const nextDateObj = new Date(targetDateObj);
-    //nextDateObj.setDate(nextDateObj.getDate() + 1);
-    // 原来的错误逻辑（基于UTC零时区）
-    // const targetDateObj = new Date(targetDate);
-    // const nextDateObj = new Date(targetDateObj);
-    // nextDateObj.setDate(nextDateObj.getDate() + 1);
-    // const isTargetDate = start && start >= targetDateObj && start < nextDateObj;
-
-    // 修正后的逻辑（基于UTC+8时区，替换上面的代码）
     const utc8DateRange = getUTC8DateRange(targetDate);
 
     // 匹配指定 channel id 的 programme 标签（转义特殊字符）
@@ -344,7 +360,6 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
       // 解析时间并过滤目标日期
       const start = parseEpgTime(startStr);
       const stop = parseEpgTime(stopStr);
-      // const isTargetDate = start && start >= targetDateObj && start < nextDateObj;
       const isTargetDate = start && start >= utc8DateRange.start && start <= utc8DateRange.end;
 
       if (isTargetDate) {
@@ -399,16 +414,13 @@ export async function onRequest(context) {
     const queryParams = Object.fromEntries(url.searchParams.entries());
     const isDebug = queryParams.debug === "1" || CONFIG.DEBUG;
 
-    // 解析参数
+    // 解析参数：获取频道别名匹配结果
     const oriChannelName = queryParams.ch || queryParams.channel || "";
-    // const cleanChannel = cleanChannelName(oriChannelName);
-    // ================ 【修改后的代码：调用别名映射函数】===============
-    const cleanChannel = getTargetChannelName(oriChannelName); // 替换原有的 cleanChannelName 直接调用
-
+    const channelMatchResult = getTargetChannelName(oriChannelName); // 替换原直接调用cleanChannelName
     const targetDate = getFormatDate(queryParams.date);
 
     // 频道为空返回404
-    if (!cleanChannel) {
+    if (!channelMatchResult.cleanOriginalName) {
       return new Response("404 Not Found. <br>未指定频道参数", {
         status: 404,
         headers: { "Content-Type": "text/html; charset=utf-8" }
@@ -442,25 +454,17 @@ export async function onRequest(context) {
       xmlStr = await cachedResponse.text();
     }
 
-    // 解析 XML 提取节目
-    const parseResult = parseEpgXml(xmlStr, cleanChannel, targetDate, isDebug);
+    // 解析 XML 提取节目（传递频道匹配结果，包含别名信息）
+    const parseResult = parseEpgXml(xmlStr, channelMatchResult, targetDate, isDebug);
     let epgData;
 
     if (parseResult.matchedProgrammes.length > 0) {
       // 有匹配的节目数据
       epgData = {
-        channel_name: cleanChannel,
+        channel_name: channelMatchResult.targetChannelName,
         date: targetDate,
         url: CONFIG.DEFAULT_URL,
-        icon: `${CONFIG.ICON_BASE_URL}${encodeURIComponent(cleanChannel)}.png`,
-/*
-        epg_data: parseResult.matchedProgrammes.map(prog => ({
-          start: prog.start.toTimeString().slice(0, 5),
-          end: prog.stop.toTimeString().slice(0, 5),
-          title: prog.title,
-          desc: prog.desc
-        }))
-*/
+        icon: `${CONFIG.ICON_BASE_URL}${encodeURIComponent(channelMatchResult.targetChannelName)}.png`,
         // 调用修正后的格式化函数
         epg_data: parseResult.matchedProgrammes.map(prog => ({
           start: formatTimeToUTC8(prog.start),

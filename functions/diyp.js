@@ -29,17 +29,65 @@ function cleanChannelName(channelName) {
 }
 
 /**
- * 新增：计算两个字符串的相似度（简化版编辑距离）
- * 用于近似匹配（比如4K纪实专区 → 4K超清）
+ * 最终优化版：中文语义优先+去通用词+核心主题词匹配
+ * 1. 过滤通用无意义词（卫视、频道、高清等）
+ * 2. 基于纯主题名提取核心词，优先匹配主题一致性
+ * 3. 加权得分：主题词完全匹配（60%）> 主题词部分匹配（30%）> 单字补充（10%）
  */
 function getStringSimilarity(str1, str2) {
   if (!str1 || !str2) return 0;
-  const set1 = new Set(str1.split(""));
-  const set2 = new Set(str2.split(""));
+
+  // 1. 通用无意义词黑名单（可根据实际频道名扩展）
+  const COMMON_EMPTY_WORDS = [
+    "卫视", "频道", "高清", "4K", "SDR", "超高清", "IPTV", 
+    "数字", "影视", "综艺", "纪实", "科教", "体育", "休闲",
+    "生活", "新闻", "少儿", "财经", "文艺", "国际", "中文", "资讯"
+  ];
+
+  // 2. 工具函数：过滤通用无意义词，得到纯主题名
+  const getPureTopicName = (name) => {
+    let pureName = name;
+    // 依次过滤黑名单中的通用词（替换为空）
+    COMMON_EMPTY_WORDS.forEach(word => {
+      pureName = pureName.replace(new RegExp(word, "g"), "");
+    });
+    // 清理过滤后可能残留的空格、特殊字符
+    return pureName.trim().replace(/\s+/g, "");
+  };
+
+  // 3. 工具函数：提取主题核心词（去通用词后的纯名称）
+  const getCoreTopic = (name) => {
+    const pureName = getPureTopicName(name);
+    // 核心词规则：纯主题名≥2字取完整名称，1字取原词（避免无意义）
+    return pureName.length >= 2 ? pureName : name;
+  };
+
+  // 4. 计算得分（加权逻辑：主题优先，单字补充）
+  const core1 = getCoreTopic(str1); // 目标频道核心主题（如“凤凰卫视”→“凤凰”）
+  const core2 = getCoreTopic(str2); // 候选频道核心主题（如“凤凰中文”→“凤凰”，“北京卫视”→“北京”）
+
+  let totalScore = 0;
+
+  // 5. 第一权重：主题词完全匹配（60%）- 最高优先级
+  if (core1 === core2 && core1.length >= 2) {
+    totalScore += 0.6;
+  } 
+  // 6. 第二权重：主题词部分匹配（30%）- 核心词包含关系
+  else if (core1.includes(core2) || core2.includes(core1)) {
+    totalScore += 0.3;
+  }
+
+  // 7. 第三权重：单字补充匹配（10%）- 避免主题词过短导致的偏差
+  const set1 = new Set(core1.split(""));
+  const set2 = new Set(core2.split(""));
   const intersection = [...set1].filter(char => set2.has(char)).length;
   const union = new Set([...set1, ...set2]).size;
-  return union === 0 ? 0 : intersection / union;
+  const jaccardScore = union === 0 ? 0 : (intersection / union) * 0.1;
+  totalScore += jaccardScore;
+
+  return totalScore;
 }
+
 
 /**
  * 2. 格式化日期（YYYY-MM-DD）

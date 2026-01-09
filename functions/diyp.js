@@ -16,6 +16,14 @@ const CONFIG = {
 };
 
 /**
+ * 新增：频道别名映射表（解决常见别名与XML精准名的对应）
+ * "查询名": "XML频道名"
+ */
+const CHANNEL_ALIAS_MAP = {
+  "凤凰卫视": "凤凰中文"
+};
+
+/**
  * 1. 清理频道名（放宽规则：仅移除HTML特殊字符+多余空格，不强制大写）
  */
 function cleanChannelName(channelName) {
@@ -26,6 +34,12 @@ function cleanChannelName(channelName) {
     .replace(/[<>&"']/g, "") // 移除HTML特殊字符
     .replace(/\s+/g, "")    // 移除连续空格
     .replace(/[\u200B-\u200D\uFEFF]/g, ""); // 移除零宽空格等不可见字符
+}
+
+// 在cleanChannel之后，新增别名映射逻辑
+function getTargetChannelName(originalChannel) {
+  const cleanName = cleanChannelName(originalChannel);
+  return CHANNEL_ALIAS_MAP[cleanName] || cleanName;
 }
 
 /**
@@ -387,7 +401,10 @@ export async function onRequest(context) {
 
     // 解析参数
     const oriChannelName = queryParams.ch || queryParams.channel || "";
-    const cleanChannel = cleanChannelName(oriChannelName);
+    // const cleanChannel = cleanChannelName(oriChannelName);
+    // ================ 【修改后的代码：调用别名映射函数】===============
+    const cleanChannel = getTargetChannelName(oriChannelName); // 替换原有的 cleanChannelName 直接调用
+
     const targetDate = getFormatDate(queryParams.date);
 
     // 频道为空返回404

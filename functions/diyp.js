@@ -105,6 +105,36 @@ function formatTimeToUTC8(dateObj) {
 }
 
 /**
+ * 工具函数：获取UTC+8时区目标日期的起始和结束时间戳
+ * @param {string} targetDateStr - 格式化后的日期字符串（YYYY-MM-DD）
+ * @returns {object} - 包含UTC+8起始时间戳、结束时间戳（用于过滤）
+ */
+function getUTC8DateRange(targetDateStr) {
+  if (!targetDateStr) {
+    const now = new Date();
+    targetDateStr = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, "0")}-${now.getDate().toString().padStart(2, "0")}`;
+  }
+  
+  // 1. 拆分目标日期的年、月、日
+  const [year, month, day] = targetDateStr.split("-").map(Number);
+  
+  // 2. 计算UTC+8时区目标日期的起始时间（YYYY-MM-DD 00:00:00 +0800）
+  // 原理：UTC零时区 = UTC+8 - 8小时 → 先创建UTC+8 00:00，再转换为UTC时间
+  const utc8Start = new Date(Date.UTC(year, month - 1, day, 0 - 8, 0, 0));
+  
+  // 3. 计算UTC+8时区目标日期的结束时间（YYYY-MM-DD 23:59:59 +0800，即次日00:00:00 - 1秒）
+  const utc8End = new Date(Date.UTC(year, month - 1, day + 1, 0 - 8, 0, 0));
+  utc8End.setMilliseconds(utc8End.getMilliseconds() - 1);
+  
+  return {
+    start: utc8Start, // UTC+8 00:00:00 对应的Date对象（UTC零时区表示）
+    end: utc8End,     // UTC+8 23:59:59 对应的Date对象（UTC零时区表示）
+    utc8Desc: `${targetDateStr} 00:00:00 ~ 23:59:59 (UTC+8)` // 易读描述
+  };
+}
+
+
+/**
  * 4. 纯正则解析 XML（替代 DOMParser，适配 Cloudflare 环境）
  * 优化：1. 兼容XML标签空格/闭合 2. 增强display-name提取 3. 完善调试信息
  * 新增：debugInfo中加入服务器时间、时区信息
@@ -201,9 +231,17 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
     debugInfo.matchedChannel = matchedChannel;
 
     // ========== 步骤3：提取该频道的所有节目 ==========
-    const targetDateObj = new Date(targetDate);
-    const nextDateObj = new Date(targetDateObj);
-    nextDateObj.setDate(nextDateObj.getDate() + 1);
+    //const targetDateObj = new Date(targetDate);
+    //const nextDateObj = new Date(targetDateObj);
+    //nextDateObj.setDate(nextDateObj.getDate() + 1);
+    // 原来的错误逻辑（基于UTC零时区）
+    // const targetDateObj = new Date(targetDate);
+    // const nextDateObj = new Date(targetDateObj);
+    // nextDateObj.setDate(nextDateObj.getDate() + 1);
+    // const isTargetDate = start && start >= targetDateObj && start < nextDateObj;
+
+    // 修正后的逻辑（基于UTC+8时区，替换上面的代码）
+    const utc8DateRange = getUTC8DateRange(targetDate);
 
     // 匹配指定 channel id 的 programme 标签（转义特殊字符）
     const escapedChannelId = matchedChannel.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -236,7 +274,8 @@ function parseEpgXml(xmlStr, targetChannel, targetDate, debug = false) {
       // 解析时间并过滤目标日期
       const start = parseEpgTime(startStr);
       const stop = parseEpgTime(stopStr);
-      const isTargetDate = start && start >= targetDateObj && start < nextDateObj;
+      // const isTargetDate = start && start >= targetDateObj && start < nextDateObj;
+      const isTargetDate = start && start >= utc8DateRange.start && start <= utc8DateRange.end;
 
       if (isTargetDate) {
         programmes.push({

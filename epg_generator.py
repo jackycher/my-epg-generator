@@ -708,6 +708,12 @@ def epg_main():
         else:
             enabled_sources = [s for s in config['EXTERNAL_EPG_SOURCES'] if s.get("enabled", True)]
             write_log(f"外部EPG总开关开启，有效源数量：{len(enabled_sources)}（总源数：{len(config['EXTERNAL_EPG_SOURCES'])}）", "STEP4_SOURCE_COUNT")
+
+            # ========== 新增：初始化全局最终未匹配频道列表 ==========
+            # 初始值为所有需要外部匹配的频道（深拷贝，避免修改原列表）
+            global_final_unmatched_channels = [channel.copy() for channel in pending_channels]
+            # 用于临时存储每个源匹配成功的频道（后续从全局列表移除）
+            global_matched_channels = []
             
             for source_idx, epg_source in enumerate(enabled_sources):
                 if len(pending_channels) == 0:
@@ -887,6 +893,8 @@ def epg_main():
                                     channel_has_external_multi.add(local_num)
                                 write_log(f"{raw_name}({local_num})从{source_name}补充{new_prog_count}条节目（去重后）", "STEP4_MATCH_SUCCESS")
                                 channel_matched = True
+                                # ========== 新增：收集全局匹配成功的频道 ==========
+                                global_matched_channels.append(channel.copy())
                     else:
                         match_ext_name = fuzzy_match(clean_name_local, epg_identifiers, clean_name)
                         if match_ext_name and match_ext_name in epg_map:
@@ -916,6 +924,8 @@ def epg_main():
                                         channel_has_external_multi.add(local_num)
                                     write_log(f"{raw_name}({local_num})从{source_name}补充{new_prog_count}条节目（去重后）", "STEP4_MATCH_SUCCESS")
                                     channel_matched = True
+                                # ========== 新增：收集全局匹配成功的频道 ==========
+                                global_matched_channels.append(channel.copy())
                         else:
                             # ========== 新增：当前源未匹配，加入未匹配列表 ==========
                             source_unmatched_channels.append(channel)
@@ -949,9 +959,49 @@ def epg_main():
                 else:
                     print(f"  → 源{source_idx+1}无完全未匹配频道")
 
+                # ========== 新增：从全局最终未匹配列表中，移除当前源匹配成功的频道 ==========
+                # 定义频道唯一标识（避免重名冲突，用raw_name+rtp_url）
+                def get_channel_unique_key(chan):
+                    return f"{chan.get('raw_name', '')}_{chan.get('rtp_url', '')}"
+
+                # 提取当前源匹配成功的频道唯一标识
+                matched_keys = [get_channel_unique_key(chan) for chan in global_matched_channels]
+                # 筛选全局未匹配列表，移除已匹配的频道
+                global_final_unmatched_channels = [
+                    chan for chan in global_final_unmatched_channels
+                    if get_channel_unique_key(chan) not in matched_keys
+                ]
+                # 清空当前源匹配列表，为下一个源做准备
+                global_matched_channels.clear()
+
+
+
         total_unmatched_final = len(pending_channels)
         print(f"[5/7] 多源匹配完成：总计{total_matched_by_external}个，剩余{total_unmatched_final}个未匹配")
         write_log(f"多源匹配汇总 - 成功{total_matched_by_external}个，未匹配{total_unmatched_final}个", "STEP4_FINAL_SUMMARY")
+
+        # ========== 新增：输出全局最终未匹配频道详细日志（所有源都没匹配） ==========
+        global_unmatched_count = len(global_final_unmatched_channels)
+        if global_unmatched_count > 0:
+            write_log("="*50 + " 全局最终未匹配频道明细（所有源都未补充节目） " + "="*50, "STEP4_GLOBAL_FINAL_UNMATCHED")
+            write_log(f"全局最终未匹配频道总数：{global_unmatched_count}个", "STEP4_GLOBAL_FINAL_UNMATCHED")
+            # 输出完整明细到日志
+            for idx, unmatch_channel in enumerate(global_final_unmatched_channels, 1):
+                raw_name = unmatch_channel.get("raw_name", "未知名称")
+                category = unmatch_channel.get("category", "未知分类")
+                local_num = unmatch_channel.get("local_num", "无本地ID")
+                rtp_url = unmatch_channel.get("rtp_url", "无RTP地址")
+                channel_type = unmatch_channel.get("type", "未知类型")
+                log_content = f"[{idx}] 名称：{raw_name} | 分类：{category} | 本地ID：{local_num} | 类型：{channel_type} | RTP：{rtp_url[:50]}..."
+                write_log(log_content, "STEP4_GLOBAL_UNMATCHED_ITEM")
+            write_log("="*110, "STEP4_GLOBAL_FINAL_UNMATCHED")
+    
+            # 控制台输出简洁版（方便快速查看）
+            global_unmatch_names = [c.get("raw_name", "未知") for c in global_final_unmatched_channels]
+            print(f"  → 全局最终未匹配（所有源都没匹配）：共{global_unmatched_count}个，名称：{global_unmatch_names[:30]}{'...' if len(global_unmatch_names) > 30 else ''}")
+        else:
+            write_log("全局无最终未匹配频道，所有需要补充的频道都已被至少一个源匹配成功", "STEP4_GLOBAL_FINAL_MATCH_ALL")
+            print(f"  → 全局无最终未匹配频道，所有频道都已被补充节目")
 
         # 步骤5：生成XML（修复外部ID冲突+漏加问题）
         write_log("开始生成精简版EPG XML", "STEP5_LITE")

@@ -1,4 +1,4 @@
-#EXTM3U name="MY_Playlist_generator V4.1" x-tvg-url="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml" generated-time="UTC2026-07-17 21:01:08"
+#EXTM3U name="MY_Playlist_generator V4.1" x-tvg-url="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml" generated-time="UTC2026-07-17 23:20:54"
 #EXTINF:-1 channel-number="1" tvg-id="1" tvg-name="CCTV1" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/CCTV1.png" group-title="CCTV频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221225880/10000100000000060000000000025506_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",CCTV1
 rtp://239.3.1.129:8008
 #EXTINF:-1 channel-number="2" tvg-id="2" tvg-name="CCTV2" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/CCTV2.png" group-title="CCTV频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226036/10000100000000060000000000285832_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",CCTV2
@@ -135,11 +135,6 @@ rtp://239.3.1.167:8192
 rtp://239.3.1.166:8188
 #EXTINF:-1 channel-number="76" tvg-id="76" tvg-name="CETV1" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/CETV1.png" group-title="WS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226065/10000100000000060000000000384776_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",CETV1
 rtp://239.3.1.57:8152
-#EXTINF:-1 channel-number="79" tvg-id="79" tvg-name="中国交通" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/中国交通.png" group-title="WS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226173/10000100000000060000000001341044_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",中国交通
-rtp://239.3.1.188:8001
-#EXTINF:-1 tvg-name="中国天气" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/中国天气.png" group-title="WS频道",中国天气
-rtp://239.3.1.108:8001
-#【警告】未找到rtp://239.3.1.108:8001的时移地址
 #EXTINF:-1 channel-number="71" tvg-id="71" tvg-name="宁夏卫视" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/宁夏卫视.png" group-title="WS频道",宁夏卫视
 rtp://239.3.1.169:8212
 #【警告】未找到rtp://239.3.1.169:8212的时移地址
@@ -167,6 +162,14 @@ rtp://239.3.1.43:8176
 rtp://239.3.1.54:4120
 #EXTINF:-1 channel-number="174" tvg-id="174" tvg-name="CETV4" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/CETV4.png" group-title="WS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226054/10000100000000060000000000384777_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",CETV4
 rtp://239.3.1.56:4120
+#EXTINF:-1 channel-number="139" tvg-id="139" tvg-name="山东教育" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/山东教育.png" group-title="WS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226063/10000100000000060000000000384747_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",山东教育
+rtp://239.3.1.52:4120
+#EXTINF:-1 channel-number="77" tvg-id="77" tvg-name="金鹰纪实" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/金鹰纪实.png" group-title="WS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226050/10000100000000060000000000384062_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",金鹰纪实
+rtp://239.3.1.58:8156
+#EXTINF:-1 channel-number="169" tvg-id="169" tvg-name="金鹰卡通" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/金鹰卡通.png" group-title="WS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221225846/10000100000000060000000000025075_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",金鹰卡通
+rtp://239.3.1.51:9252
+#EXTINF:-1 channel-number="170" tvg-id="170" tvg-name="嘉佳卡通" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/嘉佳卡通.png" group-title="WS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221225986/10000100000000060000000000176933_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",嘉佳卡通
+rtp://239.3.1.147:9268
 #EXTINF:-1 channel-number="29" tvg-id="29" tvg-name="BRTV新闻" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/BRTV新闻.png" group-title="BRTV频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226092/10000100000000060000000000804251_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",BRTV新闻
 rtp://239.3.1.159:8000
 #EXTINF:-1 channel-number="24" tvg-id="24" tvg-name="BRTV影视" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/BRTV影视.png" group-title="BRTV频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226094/10000100000000060000000000804258_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",BRTV影视
@@ -218,6 +221,16 @@ rtp://239.3.1.106:8001
 #EXTINF:-1 tvg-name="环球旅游" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/环球旅游.png" group-title="TS频道",环球旅游
 rtp://239.3.1.109:8001
 #【警告】未找到rtp://239.3.1.109:8001的时移地址
+#EXTINF:-1 channel-number="320" tvg-id="320" tvg-name="四海钓鱼" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/四海钓鱼.png" group-title="TS频道",四海钓鱼
+rtp://239.3.1.164:8001
+#【警告】未找到rtp://239.3.1.164:8001的时移地址
+#EXTINF:-1 channel-number="80" tvg-id="80" tvg-name="证券服务" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/证券服务.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226210/406742223.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",证券服务
+rtp://239.3.1.24:8001
+#EXTINF:-1 channel-number="79" tvg-id="79" tvg-name="中国交通" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/中国交通.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226173/10000100000000060000000001341044_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",中国交通
+rtp://239.3.1.188:8001
+#EXTINF:-1 tvg-name="中国天气" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/中国天气.png" group-title="TS频道",中国天气
+rtp://239.3.1.108:8001
+#【警告】未找到rtp://239.3.1.108:8001的时移地址
 #EXTINF:-1 channel-number="37" tvg-id="37" tvg-name="淘剧场" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/淘剧场.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226005/10000100000000060000000000285122_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",淘剧场
 rtp://239.3.1.95:8001
 #EXTINF:-1 channel-number="39" tvg-id="39" tvg-name="淘娱乐" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/淘娱乐.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226073/10000100000000060000000000405013_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",淘娱乐
@@ -246,6 +259,12 @@ rtp://239.3.1.236:2000
 rtp://239.3.1.199:9000
 #EXTINF:-1 channel-number="364" tvg-id="364" tvg-name="动画" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/动画.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226024/10000100000000060000000000285652_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",动画
 rtp://239.3.1.80:4120
+#EXTINF:-1 channel-number="368" tvg-id="368" tvg-name="光影" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/光影.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226028/10000100000000060000000000285656_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",光影
+rtp://239.3.1.84:4120
+#EXTINF:-1 channel-number="378" tvg-id="378" tvg-name="星影" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/星影.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226029/10000100000000060000000000285686_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",星影
+rtp://239.3.1.94:4120
+#EXTINF:-1 channel-number="358" tvg-id="358" tvg-name="精选" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/精选.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226018/10000100000000060000000000285646_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",精选
+rtp://239.3.1.74:4120
 #EXTINF:-1 channel-number="203" tvg-id="203" tvg-name="经典电影" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/经典电影.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221225857/10000100000000060000000000025082_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",经典电影
 rtp://239.3.1.195:9024
 #EXTINF:-1 channel-number="376" tvg-id="376" tvg-name="动作影院" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/动作影院.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226039/10000100000000060000000000286226_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",动作影院
@@ -254,12 +273,6 @@ rtp://239.3.1.92:4120
 rtp://239.3.1.91:4120
 #EXTINF:-1 channel-number="372" tvg-id="372" tvg-name="红色影院" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/红色影院.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226032/10000100000000060000000000285660_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",红色影院
 rtp://239.3.1.88:4120
-#EXTINF:-1 channel-number="368" tvg-id="368" tvg-name="光影" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/光影.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226028/10000100000000060000000000285656_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",光影
-rtp://239.3.1.84:4120
-#EXTINF:-1 channel-number="378" tvg-id="378" tvg-name="星影" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/星影.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226029/10000100000000060000000000285686_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",星影
-rtp://239.3.1.94:4120
-#EXTINF:-1 channel-number="358" tvg-id="358" tvg-name="精选" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/精选.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226018/10000100000000060000000000285646_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",精选
-rtp://239.3.1.74:4120
 #EXTINF:-1 channel-number="202" tvg-id="202" tvg-name="热播剧场" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/热播剧场.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221225855/10000100000000060000000000025078_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",热播剧场
 rtp://239.3.1.194:9020
 #EXTINF:-1 channel-number="351" tvg-id="351" tvg-name="城市剧场" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/城市剧场.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226037/10000100000000060000000000285839_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",城市剧场
@@ -274,14 +287,6 @@ rtp://239.3.1.69:4120
 rtp://239.3.1.90:4120
 #EXTINF:-1 channel-number="204" tvg-id="204" tvg-name="魅力时尚" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/魅力时尚.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221225850/10000100000000060000000000025079_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",魅力时尚
 rtp://239.3.1.196:9012
-#EXTINF:-1 channel-number="139" tvg-id="139" tvg-name="山东教育" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/山东教育.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226063/10000100000000060000000000384747_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",山东教育
-rtp://239.3.1.52:4120
-#EXTINF:-1 channel-number="77" tvg-id="77" tvg-name="金鹰纪实" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/金鹰纪实.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226050/10000100000000060000000000384062_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",金鹰纪实
-rtp://239.3.1.58:8156
-#EXTINF:-1 channel-number="169" tvg-id="169" tvg-name="金鹰卡通" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/金鹰卡通.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221225846/10000100000000060000000000025075_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",金鹰卡通
-rtp://239.3.1.51:9252
-#EXTINF:-1 channel-number="170" tvg-id="170" tvg-name="嘉佳卡通" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/嘉佳卡通.png" group-title="TS频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221225986/10000100000000060000000000176933_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",嘉佳卡通
-rtp://239.3.1.147:9268
 #EXTINF:-1 channel-number="365" tvg-id="365" tvg-name="好学生" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/好学生.png" group-title="体验频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226019/10000100000000060000000000285653_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",好学生
 rtp://239.3.1.81:4120
 #EXTINF:-1 channel-number="363" tvg-id="363" tvg-name="早教" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/早教.png" group-title="体验频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226017/10000100000000060000000000285651_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",早教
@@ -294,9 +299,6 @@ rtp://239.3.1.76:4120
 rtp://239.3.1.77:4120
 #EXTINF:-1 channel-number="367" tvg-id="367" tvg-name="墨宝" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/墨宝.png" group-title="体验频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226021/10000100000000060000000000285655_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",墨宝
 rtp://239.3.1.83:4120
-#EXTINF:-1 channel-number="321" tvg-id="321" tvg-name="茶" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/茶.png" group-title="体验频道",茶
-rtp://239.3.1.165:8001
-#【警告】未找到rtp://239.3.1.165:8001的时移地址
 #EXTINF:-1 channel-number="362" tvg-id="362" tvg-name="戏曲" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/戏曲.png" group-title="体验频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226022/10000100000000060000000000285650_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",戏曲
 rtp://239.3.1.78:4120
 #EXTINF:-1 channel-number="371" tvg-id="371" tvg-name="武术" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/武术.png" group-title="体验频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226025/10000100000000060000000000285659_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",武术
@@ -316,6 +318,3 @@ rtp://239.3.1.71:4120
 #【警告】未找到rtp://239.3.1.71:4120的时移地址
 #EXTINF:-1 channel-number="354" tvg-id="354" tvg-name="音乐现场" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/音乐现场.png" group-title="体验频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226014/10000100000000060000000000285642_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",音乐现场
 rtp://239.3.1.70:4120
-#EXTINF:-1 channel-number="320" tvg-id="320" tvg-name="快乐垂钓" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/快乐垂钓.png" group-title="体验频道",快乐垂钓
-rtp://239.3.1.164:8001
-#【警告】未找到rtp://239.3.1.164:8001的时移地址

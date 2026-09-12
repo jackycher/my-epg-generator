@@ -1,4 +1,4 @@
-#EXTM3U name="MY_Playlist_generator V4.1" x-tvg-url="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml" generated-time="UTC2026-09-11 22:22:39"
+#EXTM3U name="MY_Playlist_generator V4.1" x-tvg-url="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml" generated-time="UTC2026-09-12 22:05:05"
 #EXTINF:-1 channel-number="1" tvg-id="1" tvg-name="CCTV1" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/CCTV1.png" group-title="CCTV频道",CCTV1
 rtp://239.3.1.129:8008
 #【警告】未找到rtp://239.3.1.129:8008的时移地址

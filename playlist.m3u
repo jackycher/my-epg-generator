@@ -1,4 +1,4 @@
-#EXTM3U name="MY_Playlist_generator V4.1" x-tvg-url="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml" generated-time="UTC2026-09-27 22:54:30"
+#EXTM3U name="MY_Playlist_generator V4.1" x-tvg-url="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml" generated-time="UTC2026-09-29 00:16:55"
 #EXTINF:-1 channel-number="1" tvg-id="1" tvg-name="CCTV1" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/CCTV1.png" group-title="CCTV频道",CCTV1
 rtp://239.3.1.129:8008
 #【警告】未找到rtp://239.3.1.129:8008的时移地址
@@ -432,3 +432,10 @@ rtp://239.3.1.71:4120
 #EXTINF:-1 channel-number="354" tvg-id="354" tvg-name="音乐现场" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/音乐现场.png" group-title="体验频道",音乐现场
 rtp://239.3.1.70:4120
 #【警告】未找到rtp://239.3.1.70:4120的时移地址
+#EXTINF:-1 channel-number="61" tvg-id="61" tvg-name="陕西卫视[高清]" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/陕西卫视[高清].png" group-title="新增频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226223/422332704.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",陕西卫视[高清]
+rtp://239.3.1.203:8220
+#EXTINF:-1 channel-number="60" tvg-id="60" tvg-name="海南卫视[高清]" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/海南卫视[高清].png" group-title="新增频道",海南卫视[高清]
+rtp://239.3.1.205:8228
+#【警告】未找到rtp://239.3.1.205:8228的时移地址
+#EXTINF:-1 channel-number="75" tvg-id="75" tvg-name="内蒙古卫视[高清]" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/内蒙古卫视[高清].png" group-title="新增频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226225/422332751.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",内蒙古卫视[高清]
+rtp://239.3.1.204:8224

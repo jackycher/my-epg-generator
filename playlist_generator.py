@@ -17,6 +17,8 @@ PLAYLIST_CONFIG = {
     'txt_source': './bjcul.txt',
     'remote_m3u_url': 'https://raw.githubusercontent.com/qwerttvv/Beijing-IPTV/master/IPTV-Unicom-Multicast.m3u',
     'remote_json_url': 'https://raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/playlist-zz.json',
+# ==========【新增配置】本地json文件路径，用于timeshift兜底降级 ==========
+    'local_json_url': './playlist-zz.json',
     'm3u_output': './playlist.m3u',
     'epg_url': 'https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml',
     'rtsp_enabled': True,
@@ -81,6 +83,26 @@ def read_txt_channels(txt_path):
     write_log(f"TXT读取完成 - 过滤{filtered_line_count}行，有效频道{valid_line_count}个", "STEP1_DETAIL")
     write_log(f"TXT频道列表：{', '.join(txt_channel_names)}", "STEP1_CHANNEL_LIST")
     return channels
+
+# ---------------------- 新增工具函数：读取本地JSON文件 ----------------------
+def fetch_local_json(local_json_path):
+    """
+    读取本地playlist-zz.json文件，用于timeshift兜底
+    文件不存在/解析失败返回空字典，不阻断主流程
+    """
+    log_path = PLAYLIST_CONFIG['local_json_url']
+    write_log(f"尝试读取本地兜底JSON：{log_path}", "STEP4_LOCAL_JSON")
+    if not os.path.exists(log_path):
+        write_log(f"本地兜底JSON文件不存在，跳过本地timeshift兜底", "STEP4_LOCAL_JSON")
+        return {}
+    try:
+        with open(log_path, 'r', encoding='utf-8') as f:
+            json_data = json.load(f)
+        write_log(f"本地兜底JSON读取成功，共{len(json_data)}个频道元数据", "STEP4_LOCAL_JSON")
+        return json_data
+    except Exception as e:
+        write_log(f"本地JSON读取解析失败:{str(e)}，放弃本地timeshift兜底", "STEP4_LOCAL_JSON")
+        return {}
 
 def fetch_remote_m3u(remote_m3u_url):
     """下载并解析远程M3U"""
@@ -151,13 +173,24 @@ def fetch_remote_json(remote_json_url):
         raise ConnectionError(f"读取远程JSON失败：{str(e)}")
 
 def match_json_metadata(channels, remote_json_url):
-    """匹配JSON元数据"""
-    json_data = fetch_remote_json(remote_json_url)
+    """
+    匹配JSON元数据
+    修改说明：
+    1. 同时加载【远程json】和【本地兜底json】
+    2. 频道基础元数据(name/chno/tvg_id/logo/group_title)全部使用远程json数据
+    3. timeshift_addr 优先级：远程json的timeshift.bjunicom‑rtsp.addr > 本地json的timeshift.bjunicom‑rtsp.addr，都没有则为空字符串
+    """
+    # 1、拉取远程json（主数据源）
+    json_remote_data = fetch_remote_json(remote_json_url)
+    # 2、拉取本地json（仅timeshift兜底降级）
+    json_local_data = fetch_local_json(PLAYLIST_CONFIG['local_json_url'])
+
     addr_metadata_map = {}
     addr_json_name_map = {}
-    
+
     parsed_meta_count = 0
-    for channel_name, channel_info in json_data.items():
+    # --------------------------解析远程JSON元数据---------------------------
+    for channel_name, channel_info in json_remote_data.items():
         base_meta = {
             'name': channel_info.get('name', channel_name),
             'chno': channel_info.get('chno', ''),
@@ -167,11 +200,23 @@ def match_json_metadata(channels, remote_json_url):
             'group_title': channel_info.get('group_title', ''),
             'timeshift_addr': ''
         }
-        
-        timeshift = channel_info.get('timeshift', {})
-        if 'bjunicom-rtsp' in timeshift:
-            base_meta['timeshift_addr'] = timeshift['bjunicom-rtsp'].get('addr', '')
-        
+
+        # 第一步：优先读取远程json的timeshift地址
+        timeshift_remote = channel_info.get('timeshift', {})
+        remote_timeshift_addr = ''
+        if 'bjunicom-rtsp' in timeshift_remote:
+            remote_timeshift_addr = timeshift_remote['bjunicom-rtsp'].get('addr', '')
+
+        # 如果远程没有timeshift地址，则去本地json查找同频道的timeshift作为兜底
+        final_timeshift_addr = remote_timeshift_addr
+        if not final_timeshift_addr and channel_name in json_local_data:
+            local_ch_info = json_local_data[channel_name]
+            timeshift_local = local_ch_info.get('timeshift', {})
+            if 'bjunicom-rtsp' in timeshift_local:
+                final_timeshift_addr = timeshift_local['bjunicom-rtsp'].get('addr', '')
+
+        base_meta['timeshift_addr'] = final_timeshift_addr
+
         live = channel_info.get('live', {})
         for live_type, live_info in live.items():
             addr = live_info.get('addr', '')
@@ -179,19 +224,19 @@ def match_json_metadata(channels, remote_json_url):
                 addr_metadata_map[addr] = base_meta
                 addr_json_name_map[addr] = channel_name
                 parsed_meta_count += 1
-    
+
     write_log(f"JSON元数据解析完成 - 建立{parsed_meta_count}个地址映射", "STEP4_DETAIL")
-    
+
     matched_channels = []
     matched_details = []
     unmatched_details = []
-    
+
     for ch in channels:
         ch_url = ch['url']
         ch_name = ch['name']
         metadata = addr_metadata_map.get(ch_url, {})
         json_channel_name = addr_json_name_map.get(ch_url, "")
-        
+
         matched_channel = {
             'name': ch['name'],
             'group': ch['group'],
@@ -204,24 +249,24 @@ def match_json_metadata(channels, remote_json_url):
             'is_remote': ch['group'] == '新增频道'
         }
         matched_channels.append(matched_channel)
-        
+
         if metadata:
             matched_details.append({'channel_name': ch_name, 'json_channel_name': json_channel_name, 'url': ch_url})
         else:
             unmatched_details.append({'channel_name': ch_name, 'url': ch_url})
-    
+
     matched_count = len(matched_details)
     unmatched_count = len(unmatched_details)
     write_log(f"元数据匹配完成 - 成功{matched_count}个，未匹配{unmatched_count}个", "STEP4_DETAIL")
-    
+
     if matched_details:
         matched_names = [f"{d['channel_name']}(匹配{d['json_channel_name']})" for d in matched_details[:20]]
         write_log(f"匹配成功：{', '.join(matched_names)}{'...' if len(matched_details)>20 else ''}", "STEP4_MATCHED_LIST")
-    
+
     if unmatched_details:
         unmatched_names = [f"{d['channel_name']}(URL:{d['url'][:50]}...)" for d in unmatched_details[:20]]
         write_log(f"未匹配：{', '.join(unmatched_names)}{'...' if len(unmatched_details)>20 else ''}", "STEP4_UNMATCHED_LIST")
-    
+
     return matched_channels
 
 def parse_prelogo_placeholder(prelogo, channel_data):
@@ -343,7 +388,7 @@ def generate_m3u_content(channels):
         
         # 时移警告
         if config['rtsp_enabled'] and not timeshift_addr:
-            output.append(f'#【警告】未找到{ch_url}的时移地址')
+            output.append(f'#【警告】未找到地址频道[{name}]{ch_url}的时移地址')
         
         processed_count += 1
     

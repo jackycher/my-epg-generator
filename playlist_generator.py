@@ -16,8 +16,7 @@ import traceback
 PLAYLIST_CONFIG = {
     'txt_source': './bjcul.txt',
     'remote_m3u_url': 'https://raw.githubusercontent.com/qwerttvv/Beijing-IPTV/master/IPTV-Unicom-Multicast.m3u',
-    'remote_json_url': 'https://raw.githubusercontent.com/jackycher/my-epg-generator/main/playlist-zz.json',
-#    'remote_json_url': 'https://raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/playlist-zz.json',
+    'remote_json_url': 'https://raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/playlist-zz.json',
 # ==========【新增配置】本地json文件路径，用于timeshift兜底降级 ==========
     'local_json_url': './playlist-zz.json',
     'm3u_output': './playlist.m3u',
@@ -176,15 +175,26 @@ def fetch_remote_json(remote_json_url):
 def match_json_metadata(channels, remote_json_url):
     """
     匹配JSON元数据
-    修改说明：
-    1. 同时加载【远程json】和【本地兜底json】
-    2. 频道基础元数据(name/chno/tvg_id/logo/group_title)全部使用远程json数据
-    3. timeshift_addr 优先级：远程json的timeshift.bjunicom‑rtsp.addr > 本地json的timeshift.bjunicom‑rtsp.addr，都没有则为空字符串
+    修改重点：
+    远程json与本地playlist-zz.json的timeshift兜底，由【频道名称匹配】改为【播放地址url匹配】
+    原理：预解析本地json，建立url -> timeshift映射，远程json取出live地址，直接用url查本地timeshift
     """
     # 1、拉取远程json（主数据源）
     json_remote_data = fetch_remote_json(remote_json_url)
     # 2、拉取本地json（仅timeshift兜底降级）
     json_local_data = fetch_local_json(PLAYLIST_CONFIG['local_json_url'])
+
+    # ==========【新增】预构建本地json：url -> timeshift映射表 ==========
+    local_addr_meta_map = {}
+    for local_ch_name, local_ch_info in json_local_data.items():
+        local_live = local_ch_info.get('live', {})
+        # 遍历本地json该频道所有live播放地址
+        for _, live_info in local_live.items():
+            addr = live_info.get('addr', '')
+            if addr:
+                # 保存该url对应的timeshift节点
+                local_addr_meta_map[addr] = local_ch_info.get('timeshift', {})
+    write_log(f"本地JSON已构建{len(local_addr_meta_map)}条播放地址->timeshift映射，用于兜底", "STEP4_LOCAL_JSON")
 
     addr_metadata_map = {}
     addr_json_name_map = {}
@@ -208,13 +218,19 @@ def match_json_metadata(channels, remote_json_url):
         if 'bjunicom-rtsp' in timeshift_remote:
             remote_timeshift_addr = timeshift_remote['bjunicom-rtsp'].get('addr', '')
 
-        # 如果远程没有timeshift地址，则去本地json查找同频道的timeshift作为兜底
         final_timeshift_addr = remote_timeshift_addr
-        if not final_timeshift_addr and channel_name in json_local_data:
-            local_ch_info = json_local_data[channel_name]
-            timeshift_local = local_ch_info.get('timeshift', {})
-            if 'bjunicom-rtsp' in timeshift_local:
-                final_timeshift_addr = timeshift_local['bjunicom-rtsp'].get('addr', '')
+        # ==========【修改】不再用channel_name匹配本地，改用播放地址addr匹配 ==========
+        # 遍历当前远程频道所有live地址，去本地url映射表查找timeshift兜底
+        if not final_timeshift_addr:
+            remote_live = channel_info.get('live', {})
+            for _, live_info in remote_live.items():
+                addr = live_info.get('addr', '')
+                if addr and addr in local_addr_meta_map:
+                    # 找到相同url，读取本地timeshift
+                    timeshift_local = local_addr_meta_map[addr]
+                    if 'bjunicom-rtsp' in timeshift_local:
+                        final_timeshift_addr = timeshift_local['bjunicom-rtsp'].get('addr', '')
+                        break  # 找到第一个匹配url的timeshift即退出循环
 
         base_meta['timeshift_addr'] = final_timeshift_addr
 
@@ -389,7 +405,7 @@ def generate_m3u_content(channels):
         
         # 时移警告
         if config['rtsp_enabled'] and not timeshift_addr:
-            output.append(f'#【警告】未找到地址频道[{name}]{ch_url}的时移地址')
+            output.append(f'#【警告】未找到频道[{name}]{ch_url}的时移地址')
         
         processed_count += 1
     

@@ -1747,7 +1747,12 @@
         "type": "rtsp"
       }
     },
-    "timeshift": {}
+    "timeshift": {
+      "bjunicom-rtsp": {
+        "addr": "rtsp://61.135.88.136/PLTV/88888892/224/3221226190/400975111.smil",
+        "type": "rtsp"
+      }
+
   },
   "广东卫视高清": {
     "name": "广东卫视高清",
@@ -4233,11 +4238,7 @@
         "type": "rtsp"
       }
     },
-    "timeshift": {
-      "bjunicom-rtsp": {
-        "addr": "rtsp://61.135.88.136/TVOD/88888892/224/3221226195/397709747.smil",
-        "type": "rtsp"
-      }
+    "timeshift": {}
     }
   },
   "江苏卫视4K超高清": {

@@ -245,8 +245,6 @@ def match_json_metadata(channels, remote_json_url, local_json_url):
         # 【修改】时移地址获取策略：
         #   1) 优先使用远程 metadata 中已解析到的 timeshift_addr
         #   2) 远程为空时，按 ch_url 回退查询本地 JSON 映射
-        #   注意：remote metadata 可能整体为空 dict（该 url 未匹配远程），
-        #         此时 metadata.get 返回 ''，同样会走本地回退逻辑
         # ============================================================
         timeshift_addr = metadata.get('timeshift_addr', '')
         if not timeshift_addr:
@@ -284,6 +282,93 @@ def match_json_metadata(channels, remote_json_url, local_json_url):
     if unmatched_details:
         unmatched_names = [f"{d['channel_name']}(URL:{d['url'][:50]}...)" for d in unmatched_details[:20]]
         write_log(f"未匹配：{', '.join(unmatched_names)}{'...' if len(unmatched_details)>20 else ''}", "STEP4_UNMATCHED_LIST")
+
+    # ============================================================
+    # 【新增】时移为空频道的诊断日志
+    #   目的：定位 "远程没有 timeshift、本地也没兜底上" 的真实原因
+    #   场景分类：
+    #     A. 远程未命中 + 本地未命中   → 两份 JSON 都没有这个播放地址
+    #     B. 远程命中但时移空 + 本地未命中 → 远程有该频道但 timeshift 为空，本地也没有这个地址
+    #     C. 远程未命中 + 本地命中但值空   → 理论上不会发生（构建时已过滤空值），仅兜底打印
+    #     D. 远程命中但时移空 + 本地命中但值空 → 同上，兜底打印
+    #   输出策略：
+    #     - 只打印最终 timeshift_addr 仍为空的频道
+    #     - url 用 repr() 打印，可暴露空格/\\r/全角字符等隐形差异
+    #     - 最多打印前 20 条，避免刷屏
+    #     - 同时输出分类计数，快速判断是"普遍缺失"还是"个别异常"
+    # ============================================================
+    no_ts_channels = [c for c in matched_channels if not c['timeshift_addr']]
+    if no_ts_channels:
+        # 分类统计
+        stat_remote_miss_local_miss = 0   # A：远程、本地都没有该 url
+        stat_remote_hit_ts_empty = 0      # B：远程命中但 timeshift 为空，且本地也没有
+        stat_other = 0                     # C/D：理论上不应出现的兜底情况
+
+        write_log(
+            f"时移诊断 - 最终时移为空的频道共{len(no_ts_channels)}个，逐条分析（最多显示20条）：",
+            "STEP4_TS_DEBUG"
+        )
+
+        for c in no_ts_channels[:20]:
+            ch_url = c['url']
+            ch_name = c['name']
+
+            # 远程侧信息
+            remote_hit = ch_url in addr_metadata_map
+            remote_ts = addr_metadata_map.get(ch_url, {}).get('timeshift_addr', '') if remote_hit else ''
+            remote_json_name = addr_json_name_map.get(ch_url, '')
+
+            # 本地方信息
+            local_hit = ch_url in local_timeshift_map
+            local_ts = local_timeshift_map.get(ch_url, '')
+
+            # 原因归类
+            if not remote_hit and not local_hit:
+                reason = "A. 远程/本地均未命中该播放地址"
+                stat_remote_miss_local_miss += 1
+            elif remote_hit and not remote_ts and not local_hit:
+                reason = "B. 远程命中但timeshift为空，本地未命中该播放地址"
+                stat_remote_hit_ts_empty += 1
+            elif not remote_hit and local_hit and not local_ts:
+                reason = "C. 远程未命中，本地命中但时移值为空（异常）"
+                stat_other += 1
+            elif remote_hit and not remote_ts and local_hit and not local_ts:
+                reason = "D. 远程时移空，本地命中但时移值为空（异常）"
+                stat_other += 1
+            else:
+                # 兜底：结构上不应到达这里，保留以便排查
+                reason = "E. 未归类（请反馈）"
+                stat_other += 1
+
+            write_log(
+                f"  [{reason}] 频道={ch_name!r} "
+                f"url={ch_url!r} | "
+                f"远程命中={remote_hit} 远程json名={remote_json_name!r} 远程时移={remote_ts!r} | "
+                f"本地命中={local_hit} 本地时移={local_ts!r}",
+                "STEP4_TS_DEBUG"
+            )
+
+        # 汇总统计
+        write_log(
+            f"时移诊断为空的分类统计：A(两边都没该地址)={stat_remote_miss_local_miss}，"
+            f"B(远程有但时移空且本地没该地址)={stat_remote_hit_ts_empty}，"
+            f"其他异常={stat_other}，"
+            f"总计={len(no_ts_channels)}",
+            "STEP4_TS_DEBUG_SUMMARY"
+        )
+
+        # 附加提示：打印本地 map 中与"吉林卫视"相近的 key（仅当有 no_ts 时打印一次），
+        # 便于肉眼核对是否是隐形字符差异。不改变任何业务逻辑。
+        # 如果不需要可删除下面这一小段。
+        jl_keys = [repr(k) for k in local_timeshift_map.keys() if '239.3.1.240' in k]
+        if jl_keys:
+            write_log(
+                f"本地map中与 239.3.1.240 相关的key（repr）：{jl_keys}",
+                "STEP4_TS_DEBUG_HINT"
+            )
+    # ============================================================
+    # 【新增结束】
+    # ============================================================
 
     return matched_channels
 

@@ -4634,7 +4634,12 @@
         "type": "rtsp"
       }
     },
-    "timeshift": {}
+    "timeshift": {
+      "bjunicom-rtsp": {
+        "addr": "rtsp://61.135.88.136/TVOD/88888892/224/3221226213/406750667.smil",
+        "type": "rtsp"
+      }
+    }
   },
   "求索4K": {
     "name": "求索4K",
@@ -4773,7 +4778,12 @@
         "type": "rtsp"
       }
     },
-    "timeshift": {}
+    "timeshift": {
+      "bjunicom-rtsp": {
+        "addr": "rtsp://61.135.88.136/TVOD/88888892/224/3221226227/422333129.smil",
+        "type": "rtsp"
+      }
+    }
   },
   "陕西卫视高清": {
     "name": "陕西卫视高清",

@@ -18,7 +18,7 @@ PLAYLIST_CONFIG = {
     'remote_m3u_url': 'https://raw.githubusercontent.com/qwerttvv/Beijing-IPTV/master/IPTV-Unicom-Multicast.m3u',
     'remote_json_url': 'https://raw.githubusercontent.com/zzzz0317/beijing-unicom-iptv-playlist/main/playlist-zz.json',
 # ==========【新增配置】本地json文件路径，用于timeshift兜底降级 ==========
-    'local_json_url': './playlist-zz.json',
+    'local_json_url': './local-playlist-zz.json',
     'm3u_output': './playlist.m3u',
     'epg_url': 'https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml',
     'rtsp_enabled': True,

@@ -85,23 +85,23 @@ def read_txt_channels(txt_path):
     return channels
 
 # ---------------------- 新增工具函数：读取本地JSON文件 ----------------------
-def fetch_local_json(local_json_path):
+def read_local_json(local_json_path):
     """
-    读取本地playlist-zz.json文件，用于timeshift兜底
-    文件不存在/解析失败返回空字典，不阻断主流程
+    【新增】读取本地 JSON 元数据文件（用于时移地址回退）
+    - 文件不存在 / 解析失败时返回空 dict，不抛异常，保证主流程可继续
+    - 日志分区使用 STEP4_LOCAL* 前缀，便于与远程日志区分
     """
-    log_path = PLAYLIST_CONFIG['local_json_url']
-    write_log(f"尝试读取本地兜底JSON：{log_path}", "STEP4_LOCAL_JSON")
-    if not os.path.exists(log_path):
-        write_log(f"本地兜底JSON文件不存在，跳过本地timeshift兜底", "STEP4_LOCAL_JSON")
+    write_log(f"开始读取本地JSON：{local_json_path}", "STEP4_LOCAL")
+    if not os.path.exists(local_json_path):
+        write_log(f"本地JSON文件不存在：{local_json_path}，将跳过本地时移回退", "STEP4_LOCAL_WARN")
         return {}
     try:
-        with open(log_path, 'r', encoding='utf-8') as f:
+        with open(local_json_path, 'r', encoding='utf-8') as f:
             json_data = json.load(f)
-        write_log(f"本地兜底JSON读取成功，共{len(json_data)}个频道元数据", "STEP4_LOCAL_JSON")
+        write_log(f"本地JSON读取成功，包含{len(json_data)}个频道元数据", "STEP4_LOCAL_DETAIL")
         return json_data
     except Exception as e:
-        write_log(f"本地JSON读取解析失败:{str(e)}，放弃本地timeshift兜底", "STEP4_LOCAL_JSON")
+        write_log(f"读取本地JSON失败：{str(e)}，将跳过本地时移回退", "STEP4_LOCAL_ERROR")
         return {}
 
 def fetch_remote_m3u(remote_m3u_url):
@@ -172,36 +172,14 @@ def fetch_remote_json(remote_json_url):
     except Exception as e:
         raise ConnectionError(f"读取远程JSON失败：{str(e)}")
 
-def match_json_metadata(channels, remote_json_url):
-    """
-    匹配JSON元数据
-    修改重点：
-    远程json与本地playlist-zz.json的timeshift兜底，由【频道名称匹配】改为【播放地址url匹配】
-    原理：预解析本地json，建立url -> timeshift映射，远程json取出live地址，直接用url查本地timeshift
-    """
-    # 1、拉取远程json（主数据源）
-    json_remote_data = fetch_remote_json(remote_json_url)
-    # 2、拉取本地json（仅timeshift兜底降级）
-    json_local_data = fetch_local_json(PLAYLIST_CONFIG['local_json_url'])
-
-    # ==========【新增】预构建本地json：url -> timeshift映射表 ==========
-    local_addr_meta_map = {}
-    for local_ch_name, local_ch_info in json_local_data.items():
-        local_live = local_ch_info.get('live', {})
-        # 遍历本地json该频道所有live播放地址
-        for _, live_info in local_live.items():
-            addr = live_info.get('addr', '')
-            if addr:
-                # 保存该url对应的timeshift节点
-                local_addr_meta_map[addr] = local_ch_info.get('timeshift', {})
-    write_log(f"本地JSON已构建{len(local_addr_meta_map)}条播放地址->timeshift映射，用于兜底", "STEP4_LOCAL_JSON")
-
+def match_json_metadata(channels, remote_json_url, local_json_url):
+    """匹配JSON元数据（时移地址：远程优先，远程缺失时回退本地）"""
+    json_data = fetch_remote_json(remote_json_url)
     addr_metadata_map = {}
     addr_json_name_map = {}
 
     parsed_meta_count = 0
-    # --------------------------解析远程JSON元数据---------------------------
-    for channel_name, channel_info in json_remote_data.items():
+    for channel_name, channel_info in json_data.items():
         base_meta = {
             'name': channel_info.get('name', channel_name),
             'chno': channel_info.get('chno', ''),
@@ -212,27 +190,9 @@ def match_json_metadata(channels, remote_json_url):
             'timeshift_addr': ''
         }
 
-        # 第一步：优先读取远程json的timeshift地址
-        timeshift_remote = channel_info.get('timeshift', {})
-        remote_timeshift_addr = ''
-        if 'bjunicom-rtsp' in timeshift_remote:
-            remote_timeshift_addr = timeshift_remote['bjunicom-rtsp'].get('addr', '')
-
-        final_timeshift_addr = remote_timeshift_addr
-        # ==========【修改】不再用channel_name匹配本地，改用播放地址addr匹配 ==========
-        # 遍历当前远程频道所有live地址，去本地url映射表查找timeshift兜底
-        if not final_timeshift_addr:
-            remote_live = channel_info.get('live', {})
-            for _, live_info in remote_live.items():
-                addr = live_info.get('addr', '')
-                if addr and addr in local_addr_meta_map:
-                    # 找到相同url，读取本地timeshift
-                    timeshift_local = local_addr_meta_map[addr]
-                    if 'bjunicom-rtsp' in timeshift_local:
-                        final_timeshift_addr = timeshift_local['bjunicom-rtsp'].get('addr', '')
-                        break  # 找到第一个匹配url的timeshift即退出循环
-
-        base_meta['timeshift_addr'] = final_timeshift_addr
+        timeshift = channel_info.get('timeshift', {})
+        if 'bjunicom-rtsp' in timeshift:
+            base_meta['timeshift_addr'] = timeshift['bjunicom-rtsp'].get('addr', '')
 
         live = channel_info.get('live', {})
         for live_type, live_info in live.items():
@@ -244,6 +204,33 @@ def match_json_metadata(channels, remote_json_url):
 
     write_log(f"JSON元数据解析完成 - 建立{parsed_meta_count}个地址映射", "STEP4_DETAIL")
 
+    # ============================================================
+    # 【新增】读取本地 JSON，构建 "播放地址 -> 时移地址" 映射
+    # 说明：与远程一致，通过 live 节点的播放地址(addr)作为 key，
+    #       而不是通过频道名称，避免名称不一致导致匹配失败
+    # ============================================================
+    local_timeshift_map = {}
+    local_json_data = read_local_json(local_json_url)
+    local_ts_count = 0
+    for local_channel_name, local_channel_info in local_json_data.items():
+        local_timeshift = local_channel_info.get('timeshift', {})
+        if 'bjunicom-rtsp' not in local_timeshift:
+            continue
+        local_ts_addr = local_timeshift['bjunicom-rtsp'].get('addr', '')
+        if not local_ts_addr:
+            continue
+        local_live = local_channel_info.get('live', {})
+        for live_type, local_live_info in local_live.items():
+            local_addr = local_live_info.get('addr', '')
+            if local_addr:
+                # 同一频道多条线路时，每个线路地址都映射到同一个时移地址
+                local_timeshift_map[local_addr] = local_ts_addr
+                local_ts_count += 1
+    write_log(f"本地JSON时移映射构建完成 - {local_ts_count}个地址", "STEP4_LOCAL_DETAIL")
+    # ============================================================
+    # 【新增结束】
+    # ============================================================
+
     matched_channels = []
     matched_details = []
     unmatched_details = []
@@ -254,6 +241,20 @@ def match_json_metadata(channels, remote_json_url):
         metadata = addr_metadata_map.get(ch_url, {})
         json_channel_name = addr_json_name_map.get(ch_url, "")
 
+        # ============================================================
+        # 【修改】时移地址获取策略：
+        #   1) 优先使用远程 metadata 中已解析到的 timeshift_addr
+        #   2) 远程为空时，按 ch_url 回退查询本地 JSON 映射
+        #   注意：remote metadata 可能整体为空 dict（该 url 未匹配远程），
+        #         此时 metadata.get 返回 ''，同样会走本地回退逻辑
+        # ============================================================
+        timeshift_addr = metadata.get('timeshift_addr', '')
+        if not timeshift_addr:
+            timeshift_addr = local_timeshift_map.get(ch_url, '')
+        # ============================================================
+        # 【修改结束】
+        # ============================================================
+
         matched_channel = {
             'name': ch['name'],
             'group': ch['group'],
@@ -262,7 +263,7 @@ def match_json_metadata(channels, remote_json_url):
             'tvg_id': metadata.get('tvg_id', ''),
             'tvg_name': metadata.get('tvg_name', ch.get('tvg_name', ch['name'])),
             'logo': metadata.get('logo', ''),
-            'timeshift_addr': metadata.get('timeshift_addr', ''),
+            'timeshift_addr': timeshift_addr,
             'is_remote': ch['group'] == '新增频道'
         }
         matched_channels.append(matched_channel)
@@ -430,7 +431,13 @@ def playlist_main():
         remote_channels = fetch_remote_m3u(config['remote_m3u_url'])
         supplemented_channels = supplement_channels_from_remote(txt_channels, remote_channels)
         # 步骤3：匹配JSON元数据
-        matched_channels = match_json_metadata(supplemented_channels, config['remote_json_url'])
+        # 【修改】增加 local_json_url 参数，用于远程时移缺失时回退本地 JSON
+        matched_channels = match_json_metadata(
+            supplemented_channels,
+            config['remote_json_url'],
+            config['local_json_url']
+        )
+
         # 步骤4：生成M3U
         m3u_content = generate_m3u_content(matched_channels)
         # 保存文件

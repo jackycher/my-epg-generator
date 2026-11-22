@@ -1,4 +1,4 @@
-#EXTM3U name="MY_Playlist_generator V4.1" x-tvg-url="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml" generated-time="UTC2026-11-21 01:14:57"
+#EXTM3U name="MY_Playlist_generator V4.1" x-tvg-url="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/epg.xml" generated-time="UTC2026-11-22 00:11:52"
 #EXTINF:-1 channel-number="1" tvg-id="1" tvg-name="CCTV1" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/CCTV1.png" group-title="CCTV频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221225880/10000100000000060000000000025506_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",CCTV1
 rtp://239.3.1.129:8008
 #EXTINF:-1 channel-number="2" tvg-id="2" tvg-name="CCTV2" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/CCTV2.png" group-title="CCTV频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226036/10000100000000060000000000285832_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",CCTV2
@@ -319,3 +319,5 @@ rtp://239.3.1.70:4120
 #EXTINF:-1 channel-number="86" tvg-id="86" tvg-name="CCTV-16 奥林匹克[超清HDR]" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/CCTV-16 奥林匹克[超清HDR].png" group-title="新增频道",CCTV-16 奥林匹克[超清HDR]
 rtp://239.3.1.206:8001
 #【警告】未找到频道[CCTV-16 奥林匹克[超清HDR]]rtp://239.3.1.206:8001的时移地址
+#EXTINF:-1 channel-number="369" tvg-id="369" tvg-name="经典剧场[高清]" tvg-logo="https://gh-proxy.org/raw.githubusercontent.com/jackycher/my-epg-generator/main/logo/经典剧场[高清].png" group-title="新增频道" catchup="default" catchup-source="rtsp://61.135.88.136/TVOD/88888892/224/3221226023/10000100000000060000000000285657_0.smil?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",经典剧场[高清]
+rtp://239.3.1.85:4120
